@@ -4,7 +4,7 @@ A production-oriented AI Gateway built with Rust. The project provides a unified
 
 The project is designed as both a realistic AI infrastructure project and a step-by-step Rust learning project, progressing from a simple HTTP gateway to a production-oriented, observable, multi-provider AI gateway.
 
-1. Project Goals
+## 1. Project Goals
 
 The gateway will provide a centralized layer for applications and agents that need access to LLMs.
 
@@ -33,7 +33,7 @@ It will eventually support:
 
 The architecture is intentionally implemented incrementally.
 
-2. Architecture
+## 2. Architecture
 
 ![AI Gateway Architecture](docs/images/Gemini_Generated_Image_nxq877nxq877nxq8.jpg)
 
@@ -91,7 +91,7 @@ flowchart TB
     Gateway -.-> Obs
 ```
 
-3. Technology Stack
+## 3. Technology Stack
 
 **Core**
 
@@ -144,7 +144,7 @@ Eventually the gateway will support providers such as:
 - Docker Compose
 - CI/CD
 
-4. High-Level Request Flow
+## 4. High-Level Request Flow
 
 A request will eventually follow this pipeline:
 
@@ -173,7 +173,7 @@ flowchart TD
     CacheResult --> C
 ```
 
-5. Provider Abstraction
+## 5. Provider Abstraction
 
 The gateway will not tightly couple the application to a specific LLM provider.
 
@@ -189,7 +189,7 @@ flowchart TD
 
 This allows the routing engine to select a provider without changing the API layer.
 
-6. Smart Routing
+## 6. Smart Routing
 
 The routing engine will eventually consider factors such as:
 
@@ -215,7 +215,7 @@ flowchart LR
 
 Routing decisions will be configuration-driven rather than hard-coded wherever practical.
 
-7. Reliability
+## 7. Reliability
 
 The gateway will eventually implement:
 
@@ -238,7 +238,7 @@ flowchart TD
     B --> Resp[Response]
 ```
 
-8. Security
+## 8. Security
 
 Security will be treated as a first-class gateway concern.
 
@@ -258,7 +258,7 @@ Planned capabilities:
 
 The gateway should prevent applications from needing to implement these controls independently for every LLM integration.
 
-9. Rate Limiting and Quotas
+## 9. Rate Limiting and Quotas
 
 Rate limiting will operate at multiple levels:
 
@@ -278,7 +278,7 @@ Examples:
 
 Redis will eventually provide distributed state for these controls.
 
-10. Token and Cost Tracking
+## 10. Token and Cost Tracking
 
 Every LLM request should produce usage information.
 
@@ -305,7 +305,7 @@ This information will be used for:
 - Routing decisions
 - Observability
 
-11. Semantic Caching
+## 11. Semantic Caching
 
 The gateway will eventually support semantic caching.
 
@@ -324,7 +324,7 @@ The initial implementation will use:
 
 This keeps the initial architecture manageable while providing a realistic vector-search implementation.
 
-12. Observability
+## 12. Observability
 
 Every important gateway operation should be observable.
 
@@ -356,7 +356,7 @@ flowchart TD
     Root --> Tel[Telemetry]
 ```
 
-13. Project Roadmap
+## 13. Project Roadmap
 
 The project will be developed in the following phases.
 
@@ -536,55 +536,83 @@ Implement:
 - Horizontal scaling
 - Production documentation
 
-14. Target Project Structure
+## 14. Target Project Structure
 
 The project will evolve toward:
 
 ```
-ai-gateway-rs/
+ai-gateway/
 │
 ├── Cargo.toml
 ├── Cargo.lock
 ├── README.md
+├── CHANGELOG.md
+├── HANDOFF.md
+├── constitution.md
 ├── .env.example
 ├── .gitignore
 ├── docker-compose.yml
 ├── Makefile
 │
 ├── config/
-│   ├── gateway.toml
-│   ├── providers.toml
-│   └── policies.toml
+│   ├── settings.yaml
+│   ├── providers.yaml
+│   ├── models.yaml
+│   ├── routing.yaml
+│   ├── development.yaml
+│   ├── test.yaml
+│   └── production.yaml
 │
 ├── migrations/
 │
 ├── docs/
+│   ├── plan.md
+│   ├── prd.md
 │   ├── architecture.md
 │   ├── api.md
-│   ├── routing.md
+│   ├── configuration.md
+│   ├── providers.md
 │   ├── security.md
+│   ├── reliability.md
 │   ├── observability.md
-│   └── operations.md
+│   ├── testing.md
+│   ├── deployment.md
+│   ├── adr/
+│   └── images/
+│
+├── specs/
+│   ├── 001-gateway-core/
+│   └── 002-provider-abstraction/
 │
 ├── src/
 │   ├── main.rs
+│   ├── lib.rs
 │   │
 │   ├── api/
-│   ├── auth/
-│   ├── cache/
-│   ├── config/
-│   ├── cost/
-│   ├── errors/
-│   ├── middleware/
-│   ├── models/
-│   ├── providers/
-│   ├── rate_limit/
-│   ├── response/
-│   ├── routing/
-│   ├── security/
-│   ├── storage/
-│   ├── telemetry/
-│   └── tokens/
+│   │   ├── mod.rs
+│   │   ├── health.rs
+│   │   └── chat.rs
+│   │
+│   ├── application/
+│   │   ├── mod.rs
+│   │   └── chat_service.rs
+│   │
+│   ├── domain/
+│   │   ├── mod.rs
+│   │   ├── chat.rs
+│   │   ├── model.rs
+│   │   ├── provider.rs
+│   │   └── error.rs
+│   │
+│   ├── infrastructure/
+│   │   ├── mod.rs
+│   │   ├── providers/
+│   │   ├── persistence/
+│   │   └── telemetry/
+│   │
+│   └── config/
+│       ├── mod.rs
+│       └── settings.rs
 │
 └── tests/
     ├── integration/
@@ -593,7 +621,7 @@ ai-gateway-rs/
 
 This is the target structure, not the structure we will create on day one.
 
-15. Learning Objectives
+## 15. Learning Objectives
 
 By completing this project, you will learn how to build a Rust backend involving:
 
@@ -632,7 +660,7 @@ The guiding principle is:
 
 Start with a small working gateway, understand every component, and progressively evolve it into a production-oriented AI Gateway.
 
-16. Development Philosophy
+## 16. Development Philosophy
 
 We will follow this sequence for every major component:
 
@@ -656,3 +684,22 @@ OpenRouter
   =
 Working AI Gateway
 ```
+
+## 17. Documentation
+
+The project documentation set is maintained under `docs/`:
+
+- [`docs/plan.md`](docs/plan.md) — implementation roadmap
+- [`docs/prd.md`](docs/prd.md) — product requirements
+- [`docs/architecture.md`](docs/architecture.md) — system architecture
+- [`docs/api.md`](docs/api.md) — public API contract
+- [`docs/configuration.md`](docs/configuration.md) — configuration reference
+- [`docs/providers.md`](docs/providers.md) — provider architecture
+- [`docs/security.md`](docs/security.md) — security design
+- [`docs/reliability.md`](docs/reliability.md) — reliability design
+- [`docs/observability.md`](docs/observability.md) — observability
+- [`docs/testing.md`](docs/testing.md) — testing strategy
+- [`docs/deployment.md`](docs/deployment.md) — deployment
+
+Governance and principles are documented in [`constitution.md`](constitution.md),
+with feature specifications maintained under [`specs/`](specs/).

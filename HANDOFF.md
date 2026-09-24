@@ -5,22 +5,21 @@ This document is used to hand off work between development sessions. Update it a
 ## Current State
 
 - **Date**: 2026-09-24
-- **Phase**: Phase 0 - Project Foundation (In Progress/Complete as of current state)
+- **Phase**: Phase 0 - Project Foundation (Complete)
 - **Branch**: main
-- **Constitution Version**: 1.0.1
+- **Constitution Version**: 1.1.0
 
 ## Completed
 
-- [x] Project documentation created (PRD, Architecture, Plan)
+- [x] Project documentation created (PRD, Architecture, API, Configuration, Providers, Security, Reliability, Plan)
+- [x] README, CHANGELOG.md, and HANDOFF.md created
 - [x] Directory structure established (docs/, specs/, docs/adr/)
-- [x] Constitution created and updated (Spec Kit requirements)
-- [x] CHANGELOG.md created
-- [x] HANDOFF.md created
+- [x] Constitution created, ratified, and amended (Spec Kit requirements, v1.1.0)
 
 ## In Progress
 
-- [ ] Phase 0 finalization
 - [ ] Phase 1 - Architecture Specification (001-gateway-core)
+- [ ] Remaining docs: observability.md, testing.md, deployment.md
 
 ## Next Steps
 
@@ -35,7 +34,7 @@ None at this time.
 
 ## Important Context
 
-- Spec-driven development via Spec Kit (constitution v1.0.1)
+- Spec-driven development via Spec Kit (constitution v1.1.0)
 - Rust-first, incremental architecture
 - MVP starts with minimal HTTP gateway + chat completions
 

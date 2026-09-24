@@ -1,4 +1,4 @@
-# Rust AI Gateway — Project Plan
+# AI Gateway — Project Plan
 
 ## Phase 0 — Project Foundation
 
