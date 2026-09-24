@@ -6,27 +6,12 @@ The AI Gateway exposes a unified HTTP API for applications that need to interact
 
 The gateway hides provider-specific APIs behind a normalized interface.
 
-```text
-Client Application
-       |
-       | HTTP/JSON
-       v
-+----------------------+
-|      AI Gateway      |
-|                      |
-| Authentication       |
-| Authorization        |
-| Rate Limiting        |
-| Model Routing        |
-| Policy Enforcement   |
-| Provider Abstraction |
-| Usage Tracking       |
-+----------+-----------+
-           |
-     +-----+-----+-----+
-     |           |     |
-     v           v     v
- Provider A  Provider B Provider C
+```mermaid
+flowchart TD
+    Client[Client Application] -->|HTTP/JSON| GW[AI Gateway<br/>Authentication<br/>Authorization<br/>Rate Limiting<br/>Model Routing<br/>Policy Enforcement<br/>Provider Abstraction<br/>Usage Tracking]
+    GW --> PA[Provider A]
+    GW --> PB[Provider B]
+    GW --> PC[Provider C]
 ```
 
 The API is designed to resemble common chat-completion APIs while keeping the gateway internally provider-independent.
