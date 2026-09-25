@@ -253,6 +253,16 @@ The structure should evolve naturally rather than being created completely on da
 
 Create a clean Rust project and establish the development workflow.
 
+## Status
+
+**COMPLETE** (2026-09-24) — see `specs/001-project-foundation/`.
+
+- Zero-dependency Rust crate created (Edition 2024, toolchain pinned 1.98.1)
+- `src/lib.rs` + `src/main.rs` entry point; application runs and exits 0
+- `.gitignore`, `.env.example`, `README.md` Development section added
+- All quality gates pass (fmt --check, clippy -D warnings, test, build)
+- Quickstart validation scenarios verified end to end
+
 ## Learn
 
 * Rust project structure

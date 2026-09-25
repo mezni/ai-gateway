@@ -1,0 +1,8 @@
+[package]
+name = "ai-gateway"
+version = "0.1.0"
+edition = "2024"
+description = "A production-oriented AI gateway built with Rust."
+repository = "https://github.com/mezni/ai-gateway"
+
+[dependencies]

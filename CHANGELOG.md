@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Spec Kit constitution (v1.0.0 ratified, v1.1.0 amended with
   `specs/` artifact requirement) and memory
 - `CHANGELOG.md` and `HANDOFF.md`
+- Phase 0 project foundation: zero-dependency Rust crate (Edition 2024,
+  toolchain pinned via `rust-toolchain.toml`), `src/lib.rs` + `src/main.rs`
+  entry point, `.gitignore`, `.env.example`, and README Development section
+  with the quality-gate workflow (fmt/clippy/check/test/release)
+- Spec Kit feature artifacts for `specs/001-project-foundation` (spec, plan,
+  research, data model, contracts, tasks, quickstart)
 
 ### Changed
 - Converted flow/architecture diagrams in markdown docs to Mermaid

@@ -581,8 +581,7 @@ ai-gateway/
 │   └── images/
 │
 ├── specs/
-│   ├── 001-gateway-core/
-│   └── 002-provider-abstraction/
+│   └── 001-project-foundation/
 │
 ├── src/
 │   ├── main.rs
@@ -685,7 +684,44 @@ OpenRouter
 Working AI Gateway
 ```
 
-## 17. Documentation
+## 17. Development
+
+### Prerequisites
+
+- Rust toolchain **1.98.1** — pinned automatically by `rust-toolchain.toml`
+  (install via rustup).
+- Supported platform: Linux.
+
+### Setup
+
+```bash
+cp .env.example .env   # optional — no environment variables are read in this phase
+```
+
+### Development Workflow
+
+Run these checks in order:
+
+```bash
+cargo fmt --all --check            # formatting
+cargo clippy --all-targets -- -D warnings   # static analysis
+cargo check                        # compile
+cargo test                         # tests
+cargo build --release              # release build
+cargo run --quiet                  # smoke run
+```
+
+In this phase the gateway is a zero-dependency crate (`[dependencies]` is
+empty); dependencies are added by later feature phases.
+
+### Environment Variables
+
+No environment variables are read yet. The `AI_GATEWAY_` namespace is reserved
+and documented as placeholders in `.env.example`. Variables are introduced by
+later phases per the
+[environment contract](specs/001-project-foundation/contracts/environment.md).
+
+## 18. Documentation
 
 The project documentation set is maintained under `docs/`:
 

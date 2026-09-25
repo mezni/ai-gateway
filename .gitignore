@@ -1,0 +1,15 @@
+/target
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+rustc-ice-*.txt
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.env
+.env.*
+!.env.example
+*.local
+.vscode/
+.idea/
