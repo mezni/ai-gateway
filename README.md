@@ -698,6 +698,29 @@ Working AI Gateway
 cp .env.example .env   # optional — no environment variables are read in this phase
 ```
 
+### Current Module Structure
+
+The crate is structured in layered modules (dependencies point strictly inward;
+see the [module boundary contract](specs/002-layered-architecture/contracts/layout.md)):
+
+```
+src/
+├── lib.rs            # crate root; declares all layers
+├── main.rs           # thin runner / composition root
+├── domain.rs         # domain root; chat.rs + catalog.rs submodules
+│   ├── chat.rs       # ChatRequest, Message, MessageRole, ChatResponse, Usage
+│   └── catalog.rs    # Model, Provider
+├── application.rs    # AppState composition root, orchestration
+├── api.rs            # HTTP/transport layer (empty placeholder)
+├── infrastructure.rs # adapters/external integrations (empty placeholder)
+└── config.rs         # configuration types (empty placeholder)
+```
+
+Layers: `api → application → domain` and `infrastructure → domain`. The
+domain layer depends on nothing. Note this uses the file-stem module layout
+(`domain.rs` + `domain/chat.rs`) rather than the `mod.rs`-style tree shown in
+the target structure above.
+
 ### Development Workflow
 
 Run these checks in order:

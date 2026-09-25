@@ -346,6 +346,8 @@ Provider
 
 Architecture skeleton with no real provider dependency.
 
+**COMPLETE** (2026-09-24) — see `specs/002-layered-architecture/`.
+
 ---
 
 # 7. Phase 2 — HTTP Gateway Core

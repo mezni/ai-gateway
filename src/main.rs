@@ -1,3 +1,4 @@
 fn main() {
-    println!("AI Gateway v{}", ai_gateway::app_version());
+    let state = ai_gateway::application::AppState::new(ai_gateway::app_version());
+    println!("{}", state.banner());
 }

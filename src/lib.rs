@@ -1,3 +1,9 @@
+pub mod api;
+pub mod application;
+pub mod config;
+pub mod domain;
+pub mod infrastructure;
+
 /// Returns the gateway crate version.
 pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
