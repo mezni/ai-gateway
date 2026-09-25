@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced root `constitution.md` scaffold template with the ratified
   constitution text
 - Normalized doc titles under `docs/` for consistency
+- README: added "Current Module Structure" section describing the layered
+  modules and the file-stem module layout
 
 ### Removed
 - Reference to non-existent `docs/routing.md` and `docs/operations.md` in
