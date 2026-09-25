@@ -356,6 +356,25 @@ Architecture skeleton with no real provider dependency.
 
 Build the first working HTTP gateway.
 
+## Status
+
+**COMPLETE** (2026-09-25) — see `specs/003-http-gateway-core/`.
+
+- Three endpoints delivered with the exact methods above and no others
+  (`GET /health`, `GET /ready`, `POST /v1/chat/completions`)
+- The mocked chat endpoint shipped as planned: a stateless deterministic
+  local completion, with no provider call, credentials, network egress,
+  persistence, or streaming
+- Flat two-key error contract `{"code","message"}` applied uniformly to
+  routing, media type, validation, lifecycle, and internal failures
+- Readiness is driven by the lifecycle (Initializing → Ready → ShuttingDown
+  → Stopped), and shutdown is graceful under a single absolute 10-second
+  deadline
+- Configuration read from the process environment (`AI_GATEWAY_HOST`,
+  `AI_GATEWAY_PORT`); no `.env` file is loaded automatically
+- All quality gates pass (fmt --check, clippy -D warnings, check, test,
+  build); startup, drain, and SIGTERM verified against a running binary
+
 ## Learn
 
 * Axum

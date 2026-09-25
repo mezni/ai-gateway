@@ -17,10 +17,43 @@ Run in this order from a clean checkout:
 |---|-------|---------|----------------|
 | 1 | Format | `cargo fmt --all --check` | No diff reported |
 | 2 | Lint | `cargo clippy --all-targets -- -D warnings` | Zero warnings/errors |
-| 3 | Compile | `cargo check` | Succeeds |
-| 4 | Tests | `cargo test` | All tests pass |
-| 5 | Release build | `cargo build --release` | Succeeds |
-| 6 | Smoke run | `cargo run --quiet` | Application starts and exits 0 |
+| 3 | Compile | `cargo check --all-targets` | Succeeds |
+| 4 | Tests | `cargo test --all-targets` | All tests pass |
+| 5 | Debug build | `cargo build` | Succeeds |
+| 6 | Release build | `cargo build --release` | Succeeds |
+| 7 | Smoke run | `cargo run --quiet` | Service responds, then exits 0 |
+
+## Smoke Run
+
+The service is long-running, so `cargo run --quiet` starts a foreground HTTP
+server and does not exit on its own. The smoke step verifies that it serves
+traffic and then terminates with exit 0 on `SIGTERM`.
+
+```bash
+AI_GATEWAY_PORT=3001 cargo run --quiet &
+GATEWAY_PID=$!
+
+BASE_URL=http://127.0.0.1:3001
+for attempt in $(seq 1 50); do
+  curl --silent --fail "${BASE_URL}/ready" >/dev/null && break
+  sleep 0.1
+done
+
+curl --silent --fail "${BASE_URL}/ready"   # {"status":"ready"}
+curl --silent --fail "${BASE_URL}/health"  # {"status":"ok"}
+curl --silent --fail -X POST "${BASE_URL}/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"mock-model","messages":[{"role":"user","content":"Hello"}]}'
+
+kill -TERM "$GATEWAY_PID"
+wait "$GATEWAY_PID"   # exit status 0
+```
+
+This step is a manual local check performed by the contributor. The
+`cargo test --all-targets` gate already covers the lifecycle and shutdown
+behavior automatically, including the real-socket startup and `SIGTERM`
+drain tests, so a failure here signals an environment or build problem rather
+than a gap in automated coverage.
 
 ## Failure Behavior
 
@@ -31,8 +64,8 @@ Run in this order from a clean checkout:
 
 ## Scope Notes
 
-- `cargo audit`/`cargo deny` dependency scanning is introduced by the CI/CD
-  phase once dependencies exist.
+- `cargo audit`/`cargo deny` dependency scanning remains a CI/CD-phase task,
+  even though the project now has dependencies.
 - CI automation is a CI/CD-phase task; these commands here define the local
   workflow contract that CI will mirror.
 

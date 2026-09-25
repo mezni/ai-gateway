@@ -90,7 +90,7 @@ pub struct ChatResponse {
     /// Response text.
     pub content: String,
     /// Token accounting for the request.
-    pub usage: Usage,
+    pub usage: Option<Usage>,
 }
 
 impl ChatResponse {
@@ -98,7 +98,14 @@ impl ChatResponse {
     pub fn new(content: impl Into<String>, usage: Usage) -> Self {
         Self {
             content: content.into(),
-            usage,
+            usage: Some(usage),
+        }
+    }
+
+    pub fn without_usage(content: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            usage: None,
         }
     }
 }
@@ -139,9 +146,17 @@ mod tests {
     }
 
     #[test]
-    fn chat_response_construction() {
-        let response = ChatResponse::new("Hi there!", Usage::new(2, 3));
-        assert_eq!(response.content, "Hi there!");
-        assert_eq!(response.usage.total_tokens, 5);
+    fn chat_response_new_preserves_measured_usage() {
+        let usage = Usage::new(2, 3);
+        let response = ChatResponse::new("Hi there!", usage);
+
+        assert_eq!(response.usage, Some(usage));
+    }
+
+    #[test]
+    fn chat_response_without_usage_represents_unavailable_usage() {
+        let response = ChatResponse::without_usage("Hi there!");
+
+        assert_eq!(response.usage, None);
     }
 }

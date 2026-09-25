@@ -42,10 +42,14 @@ The role of a message.
 
 The gateway's normalized response to a chat request.
 
-| Attribute | Type    | Rules                                         |
-|-----------|---------|-----------------------------------------------|
-| content   | String  | Response text                                 |
-| usage     | Usage   | Token accounting for the request              |
+| Attribute | Type             | Rules                                         |
+|-----------|------------------|-----------------------------------------------|
+| content   | String           | Response text                                 |
+| usage     | Option&lt;Usage&gt; | Token accounting for the request, when known  |
+
+`Some(Usage)` means measured token accounting is available. `None` means token
+accounting is unavailable. A `without_usage(content)` constructor builds the
+`None` case.
 
 ### Usage
 
@@ -81,7 +85,7 @@ An LLM service the gateway can route to, without vendor coupling.
 
 ```text
 ChatRequest ──carries──► Vec<Message> ──role──► MessageRole
-ChatResponse ──carries──► Usage
+ChatResponse ──carries──► Option<Usage> (optional)
 Model, Provider         (catalog concepts; referenced by name/id by later routing phases)
 ```
 
@@ -89,18 +93,26 @@ Model, Provider         (catalog concepts; referenced by name/id by later routin
 routing phases reference them by id. No state transitions apply (immutable
 value types).
 
+## Phase 2 Note (HTTP Gateway Core)
+
+The HTTP Gateway Core phase returns a deterministic local mock completion built
+with `without_usage`, so no token counts are ever invented or reported. The
+HTTP success envelope deliberately omits any `usage` or timestamp field.
+Measured usage arrives with the provider/usage-reporting phase.
+
 ## Module Boundaries (architecture entities)
 
-| Layer            | Owns                                             | May depend on      |
-|------------------|--------------------------------------------------|--------------------|
-| domain           | ChatRequest, Message, MessageRole, ChatResponse, Usage, Model, Provider | nothing |
-| application      | AppState composition root, orchestration        | domain, config     |
-| api              | HTTP/transport layer (future)                    | application, config |
-| infrastructure   | adapters, persistence, providers (future)        | domain, config     |
-| config           | configuration types (future)                     | domain             |
+| Layer          | Owns                                                                    | May depend on                         |
+|----------------|-------------------------------------------------------------------------|---------------------------------------|
+| domain         | ChatRequest, Message, MessageRole, ChatResponse, Usage, Model, Provider | standard library only                 |
+| application    | AppState composition root, chat orchestration, lifecycle                | domain, config, `std`, `tokio` sync   |
+| api            | HTTP transport layer, DTOs, routing, middleware, error normalization    | application, config, transport crates |
+| infrastructure | adapters, persistence, providers (placeholder)                          | domain, config                        |
+| config         | runtime configuration types                                             | standard library only                 |
 
-Rules: dependencies point INWARD only; no layer imports a more-external layer;
-`api`/`infrastructure`/`config` are empty placeholders this phase.
+Rules: dependencies point INWARD only; no layer imports a more-external layer.
+`infrastructure` is still an empty placeholder; `api`, `application`, and
+`config` are implemented.
 
 ## Validation Rules (mapped from spec requirements)
 
