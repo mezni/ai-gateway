@@ -11,7 +11,9 @@
 - Endpoints are unauthenticated in this local development phase.
 - Request and response bodies use `application/json`.
 - JSON object key order is not significant.
-- Additional request fields are ignored until later specifications.
+- Additional request fields are ignored. The generation controls `temperature`
+  and `max_tokens` are no longer "additional": they are now recognized and
+  validated. See the supersession note in Section 4.
 - Authentication, provider routing, streaming, usage reporting, request IDs,
   and dependency-aware readiness are not part of this contract.
 
@@ -82,6 +84,18 @@ exercise the `Initializing` `ok`/`not_ready` pair. Readiness makes no claim abou
 providers, databases, caches, or other future dependencies.
 
 ## 4. Mock Chat Completion
+
+> **Superseded in part.** The chat-completions request and error contract in
+> this section is superseded by
+> [`specs/004-domain-validation/contracts/http-api.md`](../../004-domain-validation/contracts/http-api.md)
+> and
+> [`specs/004-domain-validation/contracts/validation-rules.md`](../../004-domain-validation/contracts/validation-rules.md).
+> That feature adds the 1 MiB inclusive whole-body limit and the new
+> `413 payload_too_large` row, splits the generation-control rules into
+> well-formedness and range rules, and fixes a nine-stage precedence order.
+> Everything in this section that is not contradicted by those documents —
+> the mock completion envelope, the two-field error shape, the `Allow` header,
+> and the liveness and readiness contracts — remains in force.
 
 ### Request
 
@@ -183,6 +197,9 @@ No `error` wrapper, `details`, request ID, source error, prompt, credential, or
 implementation diagnostic is included. For a `HEAD` request, HTTP semantics
 suppress the response body; the status and headers still identify the same
 error condition, while body-returning methods carry the JSON object.
+
+The table below lists the rows this feature defined. See the supersession note
+in Section 4 for the additional rows the domain-validation feature added.
 
 | Condition | Status | Code | Exact message |
 |-----------|--------|------|---------------|

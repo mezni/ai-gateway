@@ -254,6 +254,14 @@ Example:
 }
 ```
 
+`model` and `messages` are required. `temperature`, `max_tokens`, and `stream`
+are optional; an omitted control means "unspecified" and the gateway never
+invents a value in its place. Unknown fields are ignored.
+
+Every rule the gateway enforces, in the order it evaluates them, is specified
+in `specs/004-domain-validation/contracts/validation-rules.md`. That document is
+authoritative; this section is the user-facing summary.
+
 ## 11. Request Fields
 
 ### 11.1 model
@@ -317,7 +325,7 @@ The gateway validates that the message list is not empty.
 
 ### 11.3 temperature
 
-Optional.
+Optional. A JSON number in the inclusive range **0.0 – 2.0**.
 
 Example:
 
@@ -327,13 +335,16 @@ Example:
 }
 ```
 
-The gateway validates the configured acceptable range.
+A value outside the range, a value that is not a number (for example a string,
+`true`, `null`, an object, or an array), and a second `temperature` key in the
+same body are all refused with `400 invalid_request`. An omitted `temperature`
+is not a breach.
 
 The exact provider-specific behavior is handled by the provider adapter.
 
 ### 11.4 max_tokens
 
-Optional.
+Optional. A JSON **integer** in the inclusive range **1 – 4096**.
 
 Example:
 
@@ -343,7 +354,11 @@ Example:
 }
 ```
 
-The gateway may enforce maximum limits according to:
+A value outside the range, a non-integer (for example `100.5` or `1e3`), a value
+that is not a number, and a second `max_tokens` key in the same body are all
+refused with `400 invalid_request`. An omitted `max_tokens` is not a breach.
+
+The gateway may enforce additional maximum limits according to:
 
 - tenant
 - API key
@@ -353,9 +368,7 @@ The gateway may enforce maximum limits according to:
 
 ### 11.5 stream
 
-Optional.
-
-Default:
+Optional. A JSON boolean. Default `false`.
 
 ```json
 {
@@ -363,17 +376,13 @@ Default:
 }
 ```
 
-When:
+`stream: true` is **not implemented** and is refused with
+`400 unsupported_feature` / `Streaming is not supported.` The refusal is the
+last validation stage, so a request that is invalid for any other reason is
+reported as `invalid_request` instead.
 
-```json
-{
-  "stream": true
-}
-```
-
-the gateway returns an SSE stream.
-
-See the Streaming API section.
+Streaming is planned for a later phase; see the Streaming API section for the
+intended shape.
 
 ## 12. Complete Request Example
 
@@ -684,15 +693,21 @@ Identifier used to correlate the error with gateway logs and traces.
 | 401    | Authentication failed                          |
 | 403    | Authorization failed                           |
 | 404    | Resource/model not found                       |
+| 405    | Method not allowed for that path               |
 | 408    | Request timeout                                |
 | 409    | Resource conflict                              |
 | 429    | Rate limit or quota exceeded                   |
+| 413    | Request body larger than 1 MB                  |
+| 415    | Unsupported request media type                 |
 | 500    | Internal gateway error                         |
 | 502    | Provider returned an invalid/unusable response |
 | 503    | Gateway/provider unavailable                   |
 | 504    | Provider/request timeout                       |
 
 The exact mapping should be implemented centrally rather than independently inside every handler.
+
+For `POST /v1/chat/completions`, the implemented statuses are `200`, `400`,
+`404`, `405`, `413`, `415`, and `503`. See Section 21.
 
 ## 21. Validation Errors
 
@@ -713,16 +728,77 @@ HTTP/1.1 400 Bad Request
 
 ```json
 {
-  "error": {
-    "type": "validation_error",
-    "code": "invalid_request",
-    "message": "The request contains invalid fields.",
-    "request_id": "req_123"
-  }
+  "code": "invalid_request",
+  "message": "The chat request is invalid."
 }
 ```
 
-The gateway should avoid returning unnecessary internal implementation details.
+A failure response is a top-level object with **exactly** `code` and `message`.
+There is no `details` field, no `error` wrapper, no per-field list, and no
+`request_id`. The messages are fixed, so a client may match on them.
+
+The gateway must not disclose which field was wrong, the submitted value, the
+prompt content, a credential, or any parser detail. Every field-level failure
+collapses to the single `invalid_request` row; only the five non-field rows
+below are distinguishable.
+
+The implemented contract for `POST /v1/chat/completions`:
+
+| Condition                                        | Status | Code                    | Message                              |
+| ------------------------------------------------ | ------ | ----------------------- | ------------------------------------ |
+| Missing or invalid `model`                        | 400    | `invalid_request`       | The chat request is invalid.         |
+| Empty, missing, or invalid `messages`              | 400    | `invalid_request`       | The chat request is invalid.         |
+| Unsupported message role                           | 400    | `invalid_request`       | The chat request is invalid.         |
+| `temperature` or `max_tokens` is not a number      | 400    | `invalid_request`       | The chat request is invalid.         |
+| `temperature` outside 0.0-2.0                      | 400    | `invalid_request`       | The chat request is invalid.         |
+| `max_tokens` outside 1-4096                        | 400    | `invalid_request`       | The chat request is invalid.         |
+| Control supplied more than once                    | 400    | `invalid_request`       | The chat request is invalid.         |
+| Body is not readable JSON                          | 400    | `invalid_request`       | The chat request is invalid.         |
+| Streaming requested                                | 400    | `unsupported_feature`   | Streaming is not supported.          |
+| Request body larger than 1 MB                      | 413    | `payload_too_large`     | The request payload is too large.    |
+| Unsupported request media type                     | 415    | `unsupported_media_type`| The request media type is not supported. |
+| Unsupported method on a known path                 | 405    | `method_not_allowed`    | The request method is not allowed for this path. |
+| Unknown path                                       | 404    | `not_found`             | The requested path was not found.    |
+| New chat request after shutdown begins             | 503    | `not_ready`             | The gateway is not accepting new chat requests. |
+| Unexpected internal failure                        | 500    | `internal_error`        | The gateway could not complete the request. |
+
+### 21.1 Request Size Limit
+
+The whole request body is limited to **1 048 576 bytes (1 MiB), inclusive**. A
+body of exactly 1 048 576 bytes is accepted; one byte more is refused with `413
+payload_too_large`. The limit is enforced after admission and before the media
+type and JSON checks, so an oversized body with a wrong media type still returns
+413 rather than 415.
+
+### 21.2 Validation Precedence
+
+Rules are evaluated in a fixed order, and the **first** failure decides the
+response. No request produces two responses.
+
+| # | Stage                        | Response on failure |
+| - | ---------------------------- | ------------------- |
+| 1 | Route                        | 404 `not_found`     |
+| 2 | Method                       | 405 `method_not_allowed` |
+| 3 | Admission                    | 503 `not_ready`     |
+| 4 | Request size                 | 413 `payload_too_large` |
+| 5 | Media type                   | 415 `unsupported_media_type` |
+| 6 | Structural readability       | 400 `invalid_request` |
+| 7 | Required-field validity      | 400 `invalid_request` |
+| 8 | Control-range validity       | 400 `invalid_request` |
+| 9 | Streaming                    | 400 `unsupported_feature` |
+
+Consequences a client can rely on:
+
+- An oversized body reports `payload_too_large` even when its media type is also
+  wrong, because the body cannot be validated without reading it.
+- A request that violates a required field *and* asks for streaming reports
+  `invalid_request`, not `unsupported_feature`.
+- A request that supplies a mistyped control *and* an out-of-range other control
+  reports the single `invalid_request` row; the two are indistinguishable to the
+  client, by design.
+
+The authoritative rule catalog, including the 20 rule identifiers, is
+`specs/004-domain-validation/contracts/validation-rules.md`.
 
 ## 22. Authentication Errors
 
@@ -1043,10 +1119,26 @@ Conceptually:
 pub struct ChatRequest {
     pub model: String,
     pub messages: Vec<Message>,
-    pub temperature: Option<f32>,
+    pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
-    pub stream: bool,
 }
+```
+
+`temperature` is an `f64` because the accepted range endpoints `0.0` and `2.0`
+are part of the contract. A `f64` field means the type cannot derive `Eq`;
+equality is `PartialEq` only.
+
+`stream` is not a domain field. It is a wire-level request for a feature that is
+not implemented, and it is refused by the final validation stage, so a validated
+request only ever records that no stream was requested.
+
+The control bounds live beside the type and are the single source of truth:
+
+```rust
+pub const MIN_TEMPERATURE: f64 = 0.0;
+pub const MAX_TEMPERATURE: f64 = 2.0;
+pub const MIN_MAX_TOKENS: u32 = 1;
+pub const MAX_MAX_TOKENS: u32 = 4096;
 ```
 
 Message:
@@ -1216,6 +1308,14 @@ GET /health
 GET /ready
 POST /v1/chat/completions
 ```
+
+`POST /v1/chat/completions` is implemented with full request validation. Its
+contract is specified in Section 21 and in
+`specs/004-domain-validation/contracts/http-api.md`, both of which supersede any
+earlier description of this endpoint. In summary: the body is limited to 1 MiB
+inclusive, `temperature` is `0.0`-`2.0` inclusive, `max_tokens` is `1`-`4096`
+inclusive, `stream: true` is refused, and every failure is one of the seven
+`{code, message}` rows in Section 21.
 
 The initial request:
 

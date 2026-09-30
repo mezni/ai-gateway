@@ -320,6 +320,42 @@ kill -TERM "$GATEWAY_PID" 2>/dev/null || true
 wait "$GATEWAY_PID" 2>/dev/null || true
 ```
 
+## Verification Record
+
+All 15 scenarios were executed against a running debug build
+(`./target/debug/ai-gateway`) on 2026-09-30, with `AI_GATEWAY_HOST` and
+`AI_GATEWAY_PORT` unset so no external configuration was present.
+
+| # | Scenario | Result |
+|---|----------|--------|
+| 1 | Canonical request — 200, mock envelope, no `usage` field | as expected |
+| 2 | In-range controls — 3x 200, all bodies byte-identical to Scenario 1 | as expected |
+| 3 | Controls omitted — 200, byte-identical to Scenario 1 and 2 | as expected |
+| 4 | Out-of-range controls — 4x `400 invalid_request` | as expected |
+| 5 | Non-numeric controls — 5x `400 invalid_request`, no 500 | as expected |
+| 6 | Repeated control — 2x `400 invalid_request` | as expected |
+| 7 | Required fields, roles, content — 5x `400 invalid_request` | as expected |
+| 8 | No diagnostic leakage — no marker in the body, exact two-field object | as expected |
+| 9 | Size boundary — 1048576 bytes -> 200, 1048577 -> 413 `payload_too_large`; health, readiness, and the next canonical request all 200 | as expected |
+| 10 | Precedence — oversize + `text/plain` -> 413; stream only -> `unsupported_feature`; invalid + stream and control-range + stream -> `invalid_request` | as expected |
+| 11 | Media type 415, `POST /health` 405, unknown path 404 | as expected |
+| 12 | Unknown fields ignored — 200 | as expected |
+| 13 | Determinism — 100 repetitions produced 1 unique response; 50 concurrent requests all 200 | as expected |
+| 14 | Offline operation — no provider, credential, database, or cache variable present | as expected |
+| 15 | Clean shutdown — exit 0 within 10 seconds, port refuses connections afterwards | as expected |
+
+49 of 49 recorded assertions matched. Three defects surfaced during this run,
+all in the verification harness rather than the gateway, and each is worth
+recording because the same mistake is easy to repeat:
+
+- Passing a 1 MiB body as a `curl` argument exceeds `ARG_MAX`; the size
+  scenario must use `--data-binary @file`.
+- A helper that builds an exact-size body must write the bytes without a
+  trailing newline, or every body is one byte over the limit and Scenario 9
+  fails for the wrong reason.
+- `curl` exiting with status 7 (connection refused) is the *expected* result
+  after shutdown, so the assertion must expect 7, not 0.
+
 ## References
 
 - Rule catalog: [contracts/validation-rules.md](contracts/validation-rules.md)

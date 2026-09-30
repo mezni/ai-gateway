@@ -1,10 +1,17 @@
 use axum::{
+    body::{Body, to_bytes},
     extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 
 use crate::{api::error::ApiError, application::AppState};
+
+/// Largest accepted request body, whole, in bytes.
+///
+/// The bound is inclusive: a body of exactly this many bytes is admitted and
+/// one byte more is refused.
+pub const MAX_REQUEST_BODY_BYTES: usize = 1_048_576;
 
 pub async fn admit_chat(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let Some(guard) = state.lifecycle.try_admit_chat() else {
@@ -13,6 +20,46 @@ pub async fn admit_chat(State(state): State<AppState>, request: Request, next: N
     let response = next.run(request).await;
     drop(guard);
     response
+}
+
+/// Bounds the request body before any media-type check or JSON parsing.
+///
+/// A declared `Content-Length` above the limit is refused without the body
+/// being read at all, so an oversized request costs no buffering. Otherwise the
+/// body is read under the limit and a body that still exceeds it while arriving
+/// is refused, which is the case for a request that declared no length.
+///
+/// This must run after admission and before the `Json` extractor, because that
+/// extractor checks the media type before it buffers anything. Leaving the limit
+/// in `DefaultBodyLimit` would make an oversized body with a wrong media type
+/// return 415 instead of the documented 413.
+pub async fn bound_chat_body(request: Request, next: Next) -> Response {
+    if declared_length(&request).is_some_and(|declared| declared > MAX_REQUEST_BODY_BYTES) {
+        return ApiError::PayloadTooLarge.into_response();
+    }
+
+    let (parts, body) = request.into_parts();
+    let limit = MAX_REQUEST_BODY_BYTES;
+    let Ok(bytes) = to_bytes(body, limit).await else {
+        return ApiError::PayloadTooLarge.into_response();
+    };
+
+    next.run(Request::from_parts(parts, Body::from(bytes)))
+        .await
+}
+
+/// The declared `Content-Length`, when the client sent a usable one.
+///
+/// A header that is absent or unparsable yields `None`, so the body is bounded
+/// while it arrives instead of being trusted.
+fn declared_length(request: &Request) -> Option<usize> {
+    request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()
 }
 
 #[cfg(test)]
@@ -32,8 +79,213 @@ mod tests {
     use tokio::sync::Notify;
     use tower::ServiceExt;
 
-    use super::admit_chat;
+    use super::{MAX_REQUEST_BODY_BYTES, admit_chat, bound_chat_body};
     use crate::application::AppState;
+
+    fn bounded_chat_router(state: AppState) -> Router {
+        Router::new()
+            .route("/chat", post(test_chat_handler))
+            .layer(middleware::from_fn(bound_chat_body))
+            .layer(middleware::from_fn_with_state(state, admit_chat))
+    }
+
+    fn sized_request(content_type: Option<&str>, body: Vec<u8>) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri("/chat")
+            .header(axum::http::header::CONTENT_LENGTH, body.len());
+        if let Some(content_type) = content_type {
+            builder = builder.header(CONTENT_TYPE, content_type);
+        }
+        builder.body(Body::from(body)).unwrap()
+    }
+
+    /// A body of exactly `total` bytes.
+    ///
+    /// For sizes large enough to hold it, the bytes form a valid JSON chat
+    /// request whose message content is padded with `x`; smaller sizes are
+    /// returned as filler, which is enough for a size-bound test.
+    fn body_of_size(total: usize) -> Vec<u8> {
+        const PREFIX: &[u8] = br#"{"model":"mock-model","messages":[{"role":"user","content":""#;
+        const SUFFIX: &[u8] = br#""}]}"#;
+
+        if total <= PREFIX.len() + SUFFIX.len() {
+            return vec![b'x'; total];
+        }
+
+        let mut body = PREFIX.to_vec();
+        body.extend(std::iter::repeat_n(
+            b'x',
+            total - PREFIX.len() - SUFFIX.len(),
+        ));
+        body.extend_from_slice(SUFFIX);
+        body
+    }
+
+    async fn assert_payload_too_large(response: Response) {
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "code": "payload_too_large",
+                "message": "The request payload is too large.",
+            })
+        );
+        assert_eq!(value.as_object().map(serde_json::Map::len), Some(2));
+    }
+
+    #[test]
+    fn max_request_body_bytes_is_one_mebibyte() {
+        assert_eq!(MAX_REQUEST_BODY_BYTES, 1_048_576);
+    }
+
+    #[test]
+    fn body_of_size_helper_hits_the_requested_length() {
+        for total in [1, 64, 1_000, 65_536, MAX_REQUEST_BODY_BYTES] {
+            assert_eq!(body_of_size(total).len(), total);
+        }
+    }
+
+    #[tokio::test]
+    async fn body_of_exactly_the_limit_is_admitted() {
+        let state = ready_state();
+        let response = bounded_chat_router(state.clone())
+            .oneshot(sized_request(
+                Some("application/json"),
+                body_of_size(MAX_REQUEST_BODY_BYTES),
+            ))
+            .await
+            .unwrap();
+
+        // The padded body is valid JSON, so it reaches the handler and is echoed
+        // back as "forwarded" rather than refused with 413.
+        assert_ne!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn declared_length_one_byte_over_the_limit_is_refused() {
+        let state = ready_state();
+        let response = bounded_chat_router(state.clone())
+            .oneshot(sized_request(
+                Some("application/json"),
+                body_of_size(MAX_REQUEST_BODY_BYTES + 1),
+            ))
+            .await
+            .unwrap();
+
+        assert_payload_too_large(response).await;
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn undeclared_length_over_the_limit_is_refused_while_arriving() {
+        let state = ready_state();
+        // No Content-Length, so the refusal must come from bounding the stream.
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/chat")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(body_of_size(MAX_REQUEST_BODY_BYTES + 1)))
+            .unwrap();
+        let response = bounded_chat_router(state.clone())
+            .oneshot(request)
+            .await
+            .unwrap();
+
+        assert_payload_too_large(response).await;
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn unparsable_content_length_does_not_grant_an_oversized_body() {
+        let state = ready_state();
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/chat")
+            .header(CONTENT_TYPE, "application/json")
+            .header(axum::http::header::CONTENT_LENGTH, "not-a-number")
+            .body(Body::from(body_of_size(MAX_REQUEST_BODY_BYTES + 1)))
+            .unwrap();
+        let response = bounded_chat_router(state.clone())
+            .oneshot(request)
+            .await
+            .unwrap();
+
+        assert_payload_too_large(response).await;
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn over_limit_refusal_precedes_the_media_type_check() {
+        let state = ready_state();
+        let response = bounded_chat_router(state.clone())
+            .oneshot(sized_request(
+                Some("text/plain"),
+                body_of_size(MAX_REQUEST_BODY_BYTES + 1),
+            ))
+            .await
+            .unwrap();
+
+        assert_payload_too_large(response).await;
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_oversized_refusal_still_releases_the_admission_slot() {
+        let state = ready_state();
+        let response = bounded_chat_router(state.clone())
+            .oneshot(sized_request(
+                Some("application/json"),
+                body_of_size(MAX_REQUEST_BODY_BYTES + 1),
+            ))
+            .await
+            .unwrap();
+
+        assert_payload_too_large(response).await;
+        // A stalled admission slot would make graceful shutdown hang.
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .expect("the admission slot was not released after an oversized refusal");
+    }
+
+    #[tokio::test]
+    async fn a_second_request_is_still_admitted_after_an_oversized_refusal() {
+        let state = ready_state();
+        let refused = bounded_chat_router(state.clone())
+            .oneshot(sized_request(
+                Some("application/json"),
+                body_of_size(MAX_REQUEST_BODY_BYTES + 1),
+            ))
+            .await
+            .unwrap();
+        assert_payload_too_large(refused).await;
+
+        let admitted = bounded_chat_router(state.clone())
+            .oneshot(sized_request(
+                Some("application/json"),
+                body_of_size(MAX_REQUEST_BODY_BYTES),
+            ))
+            .await
+            .unwrap();
+        assert_ne!(admitted.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        tokio::time::timeout(Duration::from_secs(1), state.lifecycle.wait_for_zero())
+            .await
+            .unwrap();
+    }
 
     #[derive(Clone)]
     struct HeldSignals {

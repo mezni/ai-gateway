@@ -23,7 +23,7 @@ use crate::{
         chat::chat_completions,
         error::ApiError,
         health::{health, readiness},
-        middleware::admit_chat,
+        middleware::{admit_chat, bound_chat_body},
     },
     application::AppState,
     config::ServerConfig,
@@ -54,6 +54,11 @@ pub fn build_router(state: AppState) -> Router {
                 .on(
                     MethodFilter::POST,
                     post(chat_completions)
+                        // Admission runs first, then the body bound, then the
+                        // `Json` extractor. `bound_chat_body` must sit between
+                        // them so an oversized body is refused with 413 before
+                        // the media type is considered.
+                        .layer(middleware::from_fn(bound_chat_body))
                         .layer(middleware::from_fn_with_state(state.clone(), admit_chat)),
                 )
                 .on(MethodFilter::HEAD, head_not_allowed),

@@ -85,6 +85,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binary
 
 ### Changed
+- Phase 3 domain models and validation (`specs/004-domain-validation`, 51/51
+  tasks, requirements checklist 16/16)
+  - Added an ordered nine-stage validation pipeline in
+    `src/application/chat.rs`: required-field validity, control-range validity,
+    then streaming. The first failure wins and no later stage runs.
+  - Added `temperature: Option<f64>` and `max_tokens: Option<u32>` to
+    `ChatRequest` with `with_controls`, plus the inclusive bounds
+    `MIN_TEMPERATURE`/`MAX_TEMPERATURE` (`0.0`/`2.0`) and
+    `MIN_MAX_TOKENS`/`MAX_MAX_TOKENS` (`1`/`4096`). An omitted control is
+    recorded as unspecified and no default is invented.
+  - Replaced the derived `Deserialize` for `ChatCompletionRequestDto` with a
+    manual `MapAccess` deserializer that refuses a non-numeric `temperature`, a
+    non-integer `max_tokens`, an explicit `null` for either, and a repeated
+    control, while continuing to ignore unknown fields. Duplicate detection is
+    per-request, so no state is shared between requests.
+  - Added the 1 MiB inclusive whole-body limit (`MAX_REQUEST_BODY_BYTES` =
+    `1_048_576`) as the `bound_chat_body` middleware stage, composed after
+    admission and before the `Json` extractor so an oversized body is refused
+    with 413 before the media type is considered. A declared `Content-Length`
+    above the limit is refused without reading the body; an undeclared or
+    unparsable length is still bounded as the body arrives.
+  - Added the `ApiError::PayloadTooLarge` row: 413, `payload_too_large`,
+    `The request payload is too large.`, expanding the error contract from
+    seven to eight internal rows and to 14 client-facing rows.
+  - Moved the `stream` refusal out of the handler and into the pipeline as its
+    final stage, so the ordered pipeline is the only place streaming is decided
+    and an earlier failure still reports `invalid_request`.
+  - `ChatRequest`, `CompleteChatCommand`, and `ChatCompletionRequestDto` now
+    derive `PartialEq` without `Eq`, because an `f64` field cannot satisfy it.
+  - Rewrote one pre-existing `tests/http_api.rs` case that asserted
+    `temperature: -10.0` and `max_tokens: -1` were accepted; it encoded the
+    behavior this feature replaces, and now checks its actual intent, that
+    unknown fields are ignored.
+  - Test suite grew from 120 to 203 tests (141 library, 57 `http_api`, 5
+    `server_lifecycle`), adding full coverage of the 20-rule catalog, the nine
+    precedence stages, the size boundary from both sides, 50-request
+    concurrency isolation, and lifecycle behavior around oversized refusals.
 - `AppState` composition root now carries the lifecycle state and the
   stateless `MockChatCompletionService`
 - `main.rs` now binds the configured address, serves the gateway, and drives

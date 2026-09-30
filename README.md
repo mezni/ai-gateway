@@ -695,8 +695,53 @@ Working AI Gateway
 ### Setup
 
 ```bash
-cp .env.example .env   # optional — no environment variables are read in this phase
+cp .env.example .env   # optional — configuration is read from the process
+                       # environment only; no .env file is ever loaded
 ```
+
+### Implementation Status
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 0 | `specs/001-project-foundation` | Complete |
+| 1 | `specs/002-layered-architecture` | Complete |
+| 2 | `specs/003-http-gateway-core` | Complete |
+| 3 | `specs/004-domain-validation` | Complete |
+
+### Request Validation Contract
+
+`POST /v1/chat/completions` validates every request through an ordered pipeline
+before any application logic runs. The authoritative specification is
+[`specs/004-domain-validation/contracts/validation-rules.md`](specs/004-domain-validation/contracts/validation-rules.md).
+
+- Whole body is limited to **1 MiB (1 048 576 bytes), inclusive**.
+- `temperature` is an optional number in `0.0`–`2.0` inclusive.
+- `max_tokens` is an optional integer in `1`–`4096` inclusive.
+- `stream: true` is refused; streaming is not implemented.
+- Unknown request fields are ignored; a repeated `temperature` or `max_tokens`
+  is refused.
+- Validation reads nothing external — no provider, credential, database, cache,
+  or network call.
+
+Every failure is a top-level object with exactly `code` and `message`, with no
+`details` field:
+
+| Condition | Status | Code | Message |
+|-----------|--------|------|---------|
+| Invalid field, control range, duplicate control, or unreadable body | 400 | `invalid_request` | The chat request is invalid. |
+| Streaming requested | 400 | `unsupported_feature` | Streaming is not supported. |
+| Unknown path | 404 | `not_found` | The requested path was not found. |
+| Method not allowed for the path | 405 | `method_not_allowed` | The request method is not allowed for this path. |
+| New chat request after shutdown begins | 503 | `not_ready` | The gateway is not accepting new chat requests. |
+| Body larger than 1 MiB | 413 | `payload_too_large` | The request payload is too large. |
+| Unsupported request media type | 415 | `unsupported_media_type` | The request media type is not supported. |
+| Unexpected internal failure | 500 | `internal_error` | The gateway could not complete the request. |
+
+Rules are evaluated in a fixed order — route, method, admission, size, media
+type, structural readability, required fields, control ranges, streaming — and
+the first failure decides the response, so no request produces two responses and
+a failure never discloses which field was wrong, the submitted value, the prompt,
+or any parser detail.
 
 ### Current Module Structure
 
@@ -705,15 +750,25 @@ see the [module boundary contract](specs/002-layered-architecture/contracts/layo
 
 ```
 src/
-├── lib.rs            # crate root; declares all layers
-├── main.rs           # thin runner / composition root
-├── domain.rs         # domain root; chat.rs + catalog.rs submodules
-│   ├── chat.rs       # ChatRequest, Message, MessageRole, ChatResponse, Usage
-│   └── catalog.rs    # Model, Provider
-├── application.rs    # AppState composition root, orchestration
-├── api.rs            # HTTP/transport layer (empty placeholder)
-├── infrastructure.rs # adapters/external integrations (empty placeholder)
-└── config.rs         # configuration types (empty placeholder)
+├── lib.rs             # crate root; declares all layers
+├── main.rs            # thin runner: binds the listener, drives the lifecycle
+├── domain.rs          # domain root; chat.rs + catalog.rs submodules
+│   ├── chat.rs        # ChatRequest, Message, MessageRole, ChatResponse, Usage,
+│   │                  # and the inclusive control bounds
+│   └── catalog.rs     # Model, Provider
+├── application.rs     # AppState composition root, orchestration
+│   ├── chat.rs        # CompleteChatCommand, ValidationFailure, the ordered
+│   │                  # validation pipeline, MockChatCompletionService
+│   └── lifecycle.rs   # Initializing -> Ready -> ShuttingDown -> Stopped
+├── api.rs             # HTTP/transport layer
+│   ├── server.rs      # router composition, admission + body-bound layers
+│   ├── health.rs      # /health and /ready
+│   ├── chat.rs        # POST /v1/chat/completions handler
+│   ├── dto.rs         # wire types, including the manual request deserializer
+│   ├── error.rs       # ApiError, the client-facing error contract
+│   └── middleware.rs  # admit_chat, bound_chat_body (1 MiB limit)
+├── infrastructure.rs  # adapters/external integrations (empty placeholder)
+└── config.rs          # ServerConfig read from the process environment
 ```
 
 Layers: `api → application → domain` and `infrastructure → domain`. The
@@ -734,14 +789,17 @@ cargo build --release              # release build
 cargo run --quiet                  # smoke run
 ```
 
-In this phase the gateway is a zero-dependency crate (`[dependencies]` is
-empty); dependencies are added by later feature phases.
+`cargo check --all-targets`, `cargo build`, and `cargo build --release` are also
+part of the gate. The crate depends on Axum 0.8, Tokio 1, serde, serde_json,
+thiserror, and anyhow, with `tower` as a dev-dependency for
+`ServiceExt::oneshot`. See `docs/testing.md` for the test layout and commands.
 
 ### Environment Variables
 
-No environment variables are read yet. The `AI_GATEWAY_` namespace is reserved
-and documented as placeholders in `.env.example`. Variables are introduced by
-later phases per the
+Configuration is read from the process environment at startup:
+`AI_GATEWAY_HOST` (default `127.0.0.1`) and `AI_GATEWAY_PORT` (default `3000`).
+An empty or malformed value, or a port of `0`, is a startup failure. No `.env`
+file is loaded automatically; see the
 [environment contract](specs/001-project-foundation/contracts/environment.md).
 
 ## 18. Documentation

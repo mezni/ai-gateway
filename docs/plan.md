@@ -418,6 +418,17 @@ A running gateway accessible through HTTP.
 
 # 8. Phase 3 — Domain Models and Validation
 
+**Status: Complete** — delivered as `specs/004-domain-validation` (51/51 tasks,
+requirements checklist 16/16). Implemented: an ordered nine-stage validation
+pipeline in `src/application/chat.rs`; `temperature` (`0.0`–`2.0` inclusive) and
+`max_tokens` (`1`–`4096` inclusive) carried as optional domain fields; a manual
+`MapAccess` deserializer that refuses non-numbers, non-integers, explicit `null`,
+and duplicate controls while still ignoring unknown fields; a 1 MiB inclusive
+whole-body limit enforced after admission and before media-type handling, with a
+new `413 payload_too_large` error row; and `stream: true` refused as the final
+pipeline stage. All 20 catalogued rules and all nine precedence stages have
+automated coverage, and the error contract now has 14 rows.
+
 ## Objective
 
 Create a stable internal request/response model.

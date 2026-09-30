@@ -18,11 +18,32 @@ pub enum ApiError {
     NotFound,
     #[error("The gateway is not accepting new chat requests.")]
     NotReady,
+    #[error("The request payload is too large.")]
+    PayloadTooLarge,
     #[error("The gateway could not complete the request.")]
     InternalError,
 }
 
 impl ApiError {
+    /// Maps an application-layer validation failure to the client error.
+    ///
+    /// Every field-level failure collapses to the single documented
+    /// `invalid_request` row, so the offending field is never disclosed. A
+    /// request for an unimplemented stream keeps its own documented row.
+    pub fn from_validation_error(error: crate::application::chat::ValidationError) -> Self {
+        use crate::application::chat::ValidationFailure;
+
+        match error.failure {
+            ValidationFailure::StreamingRequested => Self::UnsupportedFeature,
+            ValidationFailure::InvalidModel
+            | ValidationFailure::InvalidMessages
+            | ValidationFailure::InvalidRole
+            | ValidationFailure::InvalidContent
+            | ValidationFailure::TemperatureOutOfRange
+            | ValidationFailure::MaxTokensOutOfRange => Self::InvalidRequest,
+        }
+    }
+
     pub fn from_json_rejection(rejection: JsonRejection) -> Self {
         match rejection {
             JsonRejection::MissingJsonContentType(_) => Self::UnsupportedMediaType,
@@ -41,6 +62,7 @@ impl ApiError {
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::NotReady => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -53,6 +75,7 @@ impl ApiError {
             Self::MethodNotAllowed => "method_not_allowed",
             Self::NotFound => "not_found",
             Self::NotReady => "not_ready",
+            Self::PayloadTooLarge => "payload_too_large",
             Self::InternalError => "internal_error",
         }
     }
@@ -65,6 +88,7 @@ impl ApiError {
             Self::MethodNotAllowed => "The request method is not allowed for this path.",
             Self::NotFound => "The requested path was not found.",
             Self::NotReady => "The gateway is not accepting new chat requests.",
+            Self::PayloadTooLarge => "The request payload is too large.",
             Self::InternalError => "The gateway could not complete the request.",
         }
     }
@@ -189,6 +213,39 @@ mod tests {
             "The requested path was not found.",
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn payload_too_large_returns_413_contract() {
+        assert_error_contract(
+            ApiError::PayloadTooLarge,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "payload_too_large",
+            "The request payload is too large.",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn payload_too_large_message_never_discloses_a_size_or_limit() {
+        let message = ApiError::PayloadTooLarge.message();
+
+        for needle in [
+            "1048576",
+            "1_048_576",
+            "1MB",
+            "1 MB",
+            "limit",
+            "byte",
+            "size",
+            "length",
+            "MAX_",
+        ] {
+            assert!(
+                !message.contains(needle),
+                "leaked {needle:?} in {message:?}"
+            );
+        }
     }
 
     #[tokio::test]

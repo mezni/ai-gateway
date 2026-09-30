@@ -23,6 +23,8 @@ pub async fn chat_completions(
     let ChatCompletionRequestDto {
         model,
         messages,
+        temperature,
+        max_tokens,
         stream,
     } = request;
 
@@ -35,16 +37,15 @@ pub async fn chat_completions(
                 content: message.content,
             })
             .collect(),
+        temperature,
+        max_tokens,
+        stream,
     };
 
     let validated = state
         .chat_service
         .validate(command)
-        .map_err(|_| ApiError::InvalidRequest)?;
-
-    if stream {
-        return Err(ApiError::UnsupportedFeature);
-    }
+        .map_err(ApiError::from_validation_error)?;
 
     let model = validated.model().to_owned();
     let completion = state.chat_service.complete(validated);

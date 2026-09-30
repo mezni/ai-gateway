@@ -7,4 +7,7 @@ pub mod catalog;
 pub mod chat;
 
 pub use catalog::{Model, Provider};
-pub use chat::{ChatRequest, ChatResponse, Message, MessageRole, Usage};
+pub use chat::{
+    ChatRequest, ChatResponse, MAX_MAX_TOKENS, MAX_TEMPERATURE, MIN_MAX_TOKENS, MIN_TEMPERATURE,
+    Message, MessageRole, Usage, is_max_tokens_in_range, is_temperature_in_range,
+};

@@ -343,6 +343,19 @@ field, error wrapper, or per-field list is included. For a `HEAD` request, HTTP
 body-suppression semantics apply: the status and headers are returned without a
 body.
 
+**Verification (2026-09-30)**: all 14 rows were re-checked against live
+responses from a running debug build with no external configuration present.
+Rows 1–12 matched their exact status, code, and message byte for byte. Row 14
+(`internal_error`) has no wire trigger in this contract, so it is asserted at the
+error-mapping layer instead. Row 13 (`not_ready`) could not be caught over a live
+socket: the mock gateway reaches `Ready` and drains fast enough that no request
+landed inside either the initializing or the shutdown window, and once the
+process has fully exited the port refuses connections rather than answering
+503. Row 13 is therefore verified deterministically by the automated suite
+(`chat_is_rejected_while_not_ready`, `initializing_rejects_chat_with_not_ready_contract`,
+`shutting_down_rejects_chat_with_not_ready_contract`, and
+`stopped_rejects_chat_with_not_ready_contract`), all of which pass.
+
 ### Key Entities
 
 - **Validation Rule**: One documented, testable condition that a chat request
