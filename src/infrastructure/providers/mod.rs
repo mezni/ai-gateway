@@ -19,8 +19,10 @@ use crate::application::chat::LlmProvider;
 use crate::config::ProviderConfig;
 
 mod deterministic;
+mod openrouter;
 
 pub use deterministic::DeterministicProvider;
+pub use openrouter::{OpenRouterProvider, OpenRouterProviderError, OPENROUTER_ID};
 
 /// One registered provider and whether it may currently be selected.
 struct Registration {

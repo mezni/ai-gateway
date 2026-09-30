@@ -1,0 +1,21 @@
+# AI Gateway - provider configuration reference.
+#
+# The gateway materializes provider configuration from environment variables
+# (specs/005-provider-abstraction/contracts/provider-contract.md, FR-028:
+# "Environment variables only. No configuration file"), so this file is the
+# operator-facing reference for the documented provider block and is not read
+# by the gateway. Each value below maps to the variable the gateway actually
+# reads; environment variables are the source of truth.
+#
+# The API key is a secret and is never stored in this file: only the name of
+# the variable that holds it is configured.
+
+providers:
+  openrouter:
+    enabled: true                    # AI_GATEWAY_OPENROUTER_ENABLED ("true" | "false", default "true")
+    base_url: "https://openrouter.ai/api/v1"   # AI_GATEWAY_OPENROUTER_BASE_URL
+    api_key_env: "OPENROUTER_API_KEY"          # AI_GATEWAY_OPENROUTER_API_KEY_ENV
+
+# Provider selection and the per-call deadline:
+#   AI_GATEWAY_PROVIDER=deterministic | openrouter   (default "deterministic")
+#   AI_GATEWAY_PROVIDER_TIMEOUT_MS=30000             (default 30000, max 300000)

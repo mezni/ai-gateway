@@ -10,3 +10,4 @@ pub mod error;
 pub mod health;
 pub mod middleware;
 pub mod server;
+pub mod telemetry;

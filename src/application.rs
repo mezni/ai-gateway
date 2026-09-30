@@ -9,9 +9,11 @@ use std::sync::Arc;
 use chat::{LlmProvider, MockChatCompletionService};
 use crate::config::ProviderConfig;
 use lifecycle::GatewayLifecycle;
+use telemetry::ChatTelemetry;
 
 pub mod chat;
 pub mod lifecycle;
+pub mod telemetry;
 
 /// Application state shared across the gateway (composition root).
 #[derive(Clone)]
@@ -25,6 +27,8 @@ pub struct AppState {
     pub chat_service: Arc<dyn LlmProvider>,
     /// Resolved provider selection and the per-call deadline.
     pub provider_config: ProviderConfig,
+    /// Per-request chat telemetry signals (counters plus the signal shape).
+    pub telemetry: ChatTelemetry,
 }
 
 /// Hand-written so the trait object need not be `Debug`, which keeps
@@ -37,6 +41,7 @@ impl std::fmt::Debug for AppState {
             .field("version", &self.version)
             .field("provider", &self.chat_service.id())
             .field("deadline_ms", &self.provider_config.deadline_ms)
+            .field("chat_requests", &self.telemetry.request_count())
             .field("lifecycle", &self.lifecycle)
             .finish()
     }
@@ -53,6 +58,7 @@ impl AppState {
             // production adapter selected from configuration.
             chat_service: Arc::new(MockChatCompletionService::new()),
             provider_config: ProviderConfig::default(),
+            telemetry: ChatTelemetry::new(),
         }
     }
 
@@ -74,6 +80,7 @@ impl AppState {
             lifecycle: Arc::new(GatewayLifecycle::new()),
             chat_service: provider,
             provider_config,
+            telemetry: ChatTelemetry::new(),
         }
     }
 

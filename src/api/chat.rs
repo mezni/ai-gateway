@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use axum::extract::rejection::JsonRejection;
 use axum::{Json, extract::State};
 
@@ -8,6 +10,7 @@ use crate::{
             ChatCompletionResponseDto,
         },
         error::ApiError,
+        telemetry::emit_chat_signal,
     },
     application::{
         AppState,
@@ -48,13 +51,31 @@ pub async fn chat_completions(
     let validated = ChatValidator::validate(command).map_err(ApiError::from_validation_error)?;
 
     let model = validated.model().to_owned();
-    let response = call_provider_bounded(
+    let started = Instant::now();
+    let result = call_provider_bounded(
         state.chat_service.as_ref(),
         validated.request(),
         state.provider_config.deadline_ms,
     )
-    .await
-    .map_err(ApiError::from_provider_failure)?;
+    .await;
+    let latency_ms = started.elapsed().as_millis() as u64;
+
+    let response = match result {
+        Ok(response) => {
+            let signal = state
+                .telemetry
+                .record_chat(state.provider_id(), &model, latency_ms, true, None);
+            emit_chat_signal(&signal);
+            response
+        }
+        Err(failure) => {
+            let signal = state
+                .telemetry
+                .record_chat(state.provider_id(), &model, latency_ms, false, Some(failure));
+            emit_chat_signal(&signal);
+            return Err(ApiError::from_provider_failure(failure));
+        }
+    };
 
     Ok(Json(ChatCompletionResponseDto {
         id: "chat_mock".to_owned(),
