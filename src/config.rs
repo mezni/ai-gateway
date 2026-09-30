@@ -4,6 +4,8 @@
 //! `domain`, never on `api` or `infrastructure`.
 //! See `specs/002-layered-architecture/contracts/layout.md`.
 
+pub mod provider;
 pub mod server;
 
+pub use provider::{ProviderConfig, ProviderConfigError};
 pub use server::ServerConfig;

@@ -123,7 +123,7 @@ async fn initializing_reports_liveness_and_not_ready_for_twenty_requests() {
         assert_readiness_contract(
             readiness,
             StatusCode::SERVICE_UNAVAILABLE,
-            br#"{"status":"not_ready"}"#,
+            br#"{"status":"not_ready","provider":"deterministic"}"#,
         )
         .await;
     }
@@ -139,7 +139,7 @@ async fn ready_reports_liveness_and_ready_for_twenty_requests() {
         let health = router.clone().oneshot(health_request()).await.unwrap();
         assert_health_contract(health).await;
         let readiness = router.clone().oneshot(readiness_request()).await.unwrap();
-        assert_readiness_contract(readiness, StatusCode::OK, br#"{"status":"ready"}"#).await;
+        assert_readiness_contract(readiness, StatusCode::OK, br#"{"status":"ready","provider":"deterministic"}"#).await;
     }
 }
 
@@ -157,7 +157,7 @@ async fn shutting_down_reports_liveness_and_not_ready_for_twenty_requests() {
         assert_readiness_contract(
             readiness,
             StatusCode::SERVICE_UNAVAILABLE,
-            br#"{"status":"not_ready"}"#,
+            br#"{"status":"not_ready","provider":"deterministic"}"#,
         )
         .await;
     }
@@ -1120,7 +1120,7 @@ async fn health_and_readiness_hold_before_during_and_after_every_request_kind() 
         let health = router.clone().oneshot(health_request()).await.unwrap();
         assert_health_contract(health).await;
         let ready = router.oneshot(readiness_request()).await.unwrap();
-        assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\"}").await;
+        assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\",\"provider\":\"deterministic\"}").await;
     }
 
     let state = AppState::new("test");
@@ -1180,7 +1180,7 @@ async fn a_long_run_of_oversized_requests_does_not_degrade_later_handling() {
     let health = router.clone().oneshot(health_request()).await.unwrap();
     assert_health_contract(health).await;
     let ready = router.clone().oneshot(readiness_request()).await.unwrap();
-    assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\"}").await;
+    assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\",\"provider\":\"deterministic\"}").await;
 }
 
 /// One row of the Client-Facing Validation Contract table in `spec.md`.
@@ -1440,7 +1440,7 @@ async fn validation_reaches_no_external_resource() {
     let health = router.clone().oneshot(health_request()).await.unwrap();
     assert_health_contract(health).await;
     let ready = router.oneshot(readiness_request()).await.unwrap();
-    assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\"}").await;
+    assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\",\"provider\":\"deterministic\"}").await;
 }
 
 #[tokio::test]
@@ -1650,7 +1650,7 @@ async fn gateway_serves_normal_traffic_after_an_oversized_refusal() {
     assert_health_contract(health).await;
 
     let ready = router.clone().oneshot(readiness_request()).await.unwrap();
-    assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\"}").await;
+    assert_readiness_contract(ready, StatusCode::OK, b"{\"status\":\"ready\",\"provider\":\"deterministic\"}").await;
 
     let normal = router
         .clone()

@@ -11,7 +11,7 @@ use crate::{
     },
     application::{
         AppState,
-        chat::{CompleteChatCommand, IncomingMessage},
+        chat::{ChatValidator, CompleteChatCommand, IncomingMessage, call_provider_bounded},
     },
 };
 
@@ -42,13 +42,19 @@ pub async fn chat_completions(
         stream,
     };
 
-    let validated = state
-        .chat_service
-        .validate(command)
-        .map_err(ApiError::from_validation_error)?;
+    // Validation first: a request that breaks a rule is rejected without any
+    // provider being contacted, so an invalid request can never surface as a
+    // provider failure.
+    let validated = ChatValidator::validate(command).map_err(ApiError::from_validation_error)?;
 
     let model = validated.model().to_owned();
-    let completion = state.chat_service.complete(validated);
+    let response = call_provider_bounded(
+        state.chat_service.as_ref(),
+        validated.request(),
+        state.provider_config.deadline_ms,
+    )
+    .await
+    .map_err(ApiError::from_provider_failure)?;
 
     Ok(Json(ChatCompletionResponseDto {
         id: "chat_mock".to_owned(),
@@ -58,7 +64,7 @@ pub async fn chat_completions(
             index: 0,
             message: AssistantMessageDto {
                 role: "assistant".to_owned(),
-                content: completion.content,
+                content: response.content,
             },
             finish_reason: "stop".to_owned(),
         }],

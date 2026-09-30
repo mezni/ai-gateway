@@ -17,7 +17,7 @@ principle.
 | Domain         | `src/domain`         | Chat concepts, catalog concepts (model/provider)                                | standard library only                 |
 | Application    | `src/application`    | Orchestration, `AppState` composition root, lifecycle                           | domain, config, `std`, `tokio` sync   |
 | API            | `src/api`            | HTTP transport, request/response DTOs, routing, middleware, error normalization | application, config, transport crates |
-| Infrastructure | `src/infrastructure` | Adapters, persistence, external integrations (placeholder)                      | domain, config                        |
+| Infrastructure | `src/infrastructure` | Adapters, persistence, external integrations               | domain, config, `application` (ports only) |
 | Config         | `src/config`         | Runtime configuration types and loading                                         | standard library only                 |
 
 ## Dependency Rules
@@ -46,15 +46,24 @@ principle.
 7. No layer MAY depend on a more-external layer than itself.
 8. Provider model stays in the domain as a concept; provider *implementations*
    belong in `infrastructure`.
-9. `infrastructure.rs` remains an empty placeholder module for future adapters
-   and providers; it has no dependencies yet.
+9. `infrastructure` implements the ports it depends on. A port is an interface
+   the inner layer *owns* and the outer layer *implements* — for provider
+   selection, `application::chat::LlmProvider`. `infrastructure` MAY therefore
+   import `application` **for port types only**, and MUST NOT call application
+   orchestration or validation entry points.
+10. The port is not in `domain` on purpose. A dyn-compatible async port needs
+    `#[async_trait]`, and rule 6 keeps `domain` free of async and third-party
+    code. Putting the port in `application` instead keeps `domain` plain and
+    still lets both `application` and `infrastructure` name it, because neither
+    is more external than the other.
 
 ## Crate Accessibility
 
 - Public API surface is exposed from the lib crate root (`src/lib.rs`).
 - Integration tests use `use ai_gateway::domain::chat::ChatRequest;` etc.
 - `main.rs` is the composition root: it constructs `AppState` and delegates;
-  it MUST NOT contain domain logic.
+  it MUST NOT contain domain logic. It is the only module that wires an
+  adapter into `AppState`, because that requires naming both layers.
 
 ## Violation Handling
 

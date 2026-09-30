@@ -707,6 +707,7 @@ cp .env.example .env   # optional — configuration is read from the process
 | 1 | `specs/002-layered-architecture` | Complete |
 | 2 | `specs/003-http-gateway-core` | Complete |
 | 3 | `specs/004-domain-validation` | Complete |
+| 4 | `specs/005-provider-abstraction` | Complete |
 
 ### Request Validation Contract
 
@@ -775,6 +776,9 @@ Layers: `api → application → domain` and `infrastructure → domain`. The
 domain layer depends on nothing. Note this uses the file-stem module layout
 (`domain.rs` + `domain/chat.rs`) rather than the `mod.rs`-style tree shown in
 the target structure above.
+
+The `infrastructure` layer now contains the `providers` module with the
+deterministic provider and registry, as added in Phase 4.
 
 ### Development Workflow
 

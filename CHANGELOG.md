@@ -121,6 +121,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `server_lifecycle`), adding full coverage of the 20-rule catalog, the nine
     precedence stages, the size boundary from both sides, 50-request
     concurrency isolation, and lifecycle behavior around oversized refusals.
+- Phase 4 provider abstraction (`specs/005-provider-abstraction`, T001-T054):
+  - Added `async-trait` dependency and `LlmProvider` trait in
+    `src/application/chat.rs` with five `ProviderFailure` categories
+  - Added `ProviderConfig` with environment variable resolution
+    (`AI_GATEWAY_PROVIDER`, `AI_GATEWAY_PROVIDER_TIMEOUT_MS`) with
+    deterministic default
+  - Added `ProviderRegistry` auto-registering deterministic provider
+  - Added `502 provider_unavailable` and `504 provider_timeout` error codes
+  with fixed messages, extending client-facing contract from 8 to 10 codes
+  - Added `provider` field to `ReadinessResponseDto` (FR-008)
+  - Bounded provider calls with configurable deadline enforcement (FR-011)
+  - Wired provider selection in `main.rs` via `AppState::new_with_provider()`
+  - Added five provider failure category tests and regression checks
+  - Test count grew from 203 to 245 tests across all test suites
 
 ### Changed
 - `AppState` composition root now carries the lifecycle state and the

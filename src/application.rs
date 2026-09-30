@@ -6,18 +6,40 @@
 
 use std::sync::Arc;
 
-use chat::MockChatCompletionService;
+use chat::{LlmProvider, MockChatCompletionService};
+use crate::config::ProviderConfig;
 use lifecycle::GatewayLifecycle;
 
 pub mod chat;
 pub mod lifecycle;
 
 /// Application state shared across the gateway (composition root).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AppState {
     version: &'static str,
     pub lifecycle: Arc<GatewayLifecycle>,
-    pub chat_service: MockChatCompletionService,
+    /// The provider that serves chat completions.
+    ///
+    /// Held as a trait object so `main.rs` can inject any adapter without the
+    /// application layer naming a concrete provider (layout rule 4).
+    pub chat_service: Arc<dyn LlmProvider>,
+    /// Resolved provider selection and the per-call deadline.
+    pub provider_config: ProviderConfig,
+}
+
+/// Hand-written so the trait object need not be `Debug`, which keeps
+/// [`LlmProvider`] limited to the `Send + Sync` every adapter already has.
+/// Reports the provider id rather than its internals: that is the part an
+/// operator needs when reading a log line.
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("version", &self.version)
+            .field("provider", &self.chat_service.id())
+            .field("deadline_ms", &self.provider_config.deadline_ms)
+            .field("lifecycle", &self.lifecycle)
+            .finish()
+    }
 }
 
 impl AppState {
@@ -26,8 +48,38 @@ impl AppState {
         Self {
             version,
             lifecycle: Arc::new(GatewayLifecycle::new()),
-            chat_service: MockChatCompletionService::new(),
+            // Default provider lives in this layer so `new` stays callable
+            // without infrastructure imports; `main.rs` overrides it with the
+            // production adapter selected from configuration.
+            chat_service: Arc::new(MockChatCompletionService::new()),
+            provider_config: ProviderConfig::default(),
         }
+    }
+
+    /// Constructs the application state with an explicit provider.
+    pub fn new_with_provider(version: &'static str, provider: Arc<dyn LlmProvider>) -> Self {
+        Self::new_with_provider_and_config(version, provider, ProviderConfig::default())
+    }
+
+    /// Constructs the application state with an explicit provider and the
+    /// configuration that selected it. `main.rs` uses this; tests that only care
+    /// about provider behaviour use [`Self::new_with_provider`].
+    pub fn new_with_provider_and_config(
+        version: &'static str,
+        provider: Arc<dyn LlmProvider>,
+        provider_config: ProviderConfig,
+    ) -> Self {
+        Self {
+            version,
+            lifecycle: Arc::new(GatewayLifecycle::new()),
+            chat_service: provider,
+            provider_config,
+        }
+    }
+
+    /// Id of the provider currently serving completions.
+    pub fn provider_id(&self) -> &str {
+        self.chat_service.id()
     }
 
     /// Returns the banner line printed at startup.

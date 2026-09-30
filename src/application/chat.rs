@@ -1,4 +1,8 @@
 use std::fmt;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use tokio::time::timeout;
 
 use crate::domain::{
     ChatRequest, ChatResponse, Message, MessageRole, is_max_tokens_in_range,
@@ -6,6 +10,68 @@ use crate::domain::{
 };
 
 const MOCK_COMPLETION_CONTENT: &str = "This is a mocked chat completion.";
+
+// ---------------------------------------------------------------------------
+// Provider boundary
+//
+// The trait lives in the application layer rather than beside its
+// implementations because `specs/002-layered-architecture/contracts/layout.md`
+// rule 4 forbids the application layer from importing `infrastructure`. Only
+// the calling layer may own the contract; adapters in
+// `src/infrastructure/providers/` implement it.
+// ---------------------------------------------------------------------------
+
+/// A provider call that did not yield a usable response.
+///
+/// Deliberately fieldless: a category names *what kind* of failure occurred and
+/// carries no message, status code, URL, model name, or any other string. That
+/// makes provider detail unrepresentable rather than merely filtered on the way
+/// out, so no future adapter can leak it by forgetting to redact (FR-010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderFailure {
+    /// The provider could not be contacted at all.
+    Unreachable,
+    /// The provider was contacted but refused to serve the request.
+    Refused,
+    /// The provider did not answer within the configured deadline.
+    DeadlineExceeded,
+    /// The provider answered with a well-formed envelope the gateway cannot use.
+    UnusableResponse,
+    /// The provider answered with something that is not a response at all.
+    InvalidResponse,
+}
+
+/// The gateway's single outbound contract for chat completions.
+///
+/// Every provider — deterministic or otherwise — implements this. The signatures
+/// mention only gateway-owned types (`ChatRequest`, `ChatResponse`), so a
+/// provider-native type can never cross the boundary and a client can never
+/// observe provider-specific structure in a response (FR-001, FR-002, FR-003).
+#[async_trait]
+pub trait LlmProvider: Send + Sync {
+    /// Produces a completion for a validated request.
+    async fn chat(&self, request: &ChatRequest) -> Result<ChatResponse, ProviderFailure>;
+
+    /// Stable identifier of this provider, used for selection and readiness.
+    fn id(&self) -> &str;
+}
+
+/// Calls `provider.chat` under a deadline, so no provider can hang a request.
+///
+/// The bound is applied *here*, in the layer that owns the trait, rather than
+/// inside each adapter. An adapter therefore cannot forget to apply it, and a
+/// provider that never resolves becomes a `DeadlineExceeded` the gateway can
+/// translate into a documented 504 (FR-011, research.md D-004).
+pub async fn call_provider_bounded(
+    provider: &dyn LlmProvider,
+    request: &ChatRequest,
+    deadline_ms: u64,
+) -> Result<ChatResponse, ProviderFailure> {
+    match timeout(Duration::from_millis(deadline_ms), provider.chat(request)).await {
+        Ok(result) => result,
+        Err(_elapsed) => Err(ProviderFailure::DeadlineExceeded),
+    }
+}
 
 /// The documented rule an application-layer validation stage rejected.
 ///
@@ -101,6 +167,11 @@ impl ValidatedChat {
         &self.request.model
     }
 
+    /// The validated request handed to the provider.
+    pub fn request(&self) -> &ChatRequest {
+        &self.request
+    }
+
     /// The sampling temperature the client supplied, or `None` when it supplied
     /// none. No default is invented for an omitted control.
     pub fn temperature(&self) -> Option<f64> {
@@ -133,6 +204,33 @@ impl MockChatCompletionService {
         Self
     }
 
+    /// Convenience for callers that already hold a service instance.
+    pub fn validate(&self, command: CompleteChatCommand) -> Result<ValidatedChat, ValidationError> {
+        ChatValidator::validate(command)
+    }
+
+    /// The fixed completion this service returns, bypassing the provider trait.
+    ///
+    /// Retained as a direct accessor; request handling goes through
+    /// [`LlmProvider::chat`] so every completion passes the provider boundary.
+    pub fn complete(&self, _chat: ValidatedChat) -> ChatCompletion {
+        let response = ChatResponse::without_usage(MOCK_COMPLETION_CONTENT);
+        ChatCompletion {
+            content: response.content,
+        }
+    }
+}
+
+/// Ordered validation of a raw chat command.
+///
+/// Validation is a separate concern from completion, so it is not reached
+/// through [`LlmProvider`]. That matters for two reasons: a request must be
+/// rejected before any provider is contacted, and the application layer cannot
+/// hold a provider instance it was handed by `infrastructure`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ChatValidator;
+
+impl ChatValidator {
     /// Evaluates the documented rule catalog in order and returns the single
     /// validated value that application logic is allowed to consume.
     ///
@@ -140,7 +238,7 @@ impl MockChatCompletionService {
     /// readability and control typing are settled by the DTO before a command
     /// exists, so the stages that remain here are control-range validity, then
     /// streaming. The first failure wins and no later stage runs.
-    pub fn validate(&self, command: CompleteChatCommand) -> Result<ValidatedChat, ValidationError> {
+    pub fn validate(command: CompleteChatCommand) -> Result<ValidatedChat, ValidationError> {
         let model = Self::required_model(command.model)?;
         let messages = Self::required_messages(command.messages)?;
         Self::control_ranges(command.temperature, command.max_tokens)?;
@@ -222,13 +320,32 @@ impl MockChatCompletionService {
 
         Ok(converted)
     }
-    pub fn complete(&self, _chat: ValidatedChat) -> ChatCompletion {
-        let response = ChatResponse::without_usage(MOCK_COMPLETION_CONTENT);
-        ChatCompletion {
-            content: response.content,
-        }
+}
+
+#[async_trait]
+impl LlmProvider for MockChatCompletionService {
+    async fn chat(&self, _request: &ChatRequest) -> Result<ChatResponse, ProviderFailure> {
+        Ok(ChatResponse::without_usage(MOCK_COMPLETION_CONTENT))
+    }
+
+    fn id(&self) -> &str {
+        DETERMINISTIC_PROVIDER_ID
     }
 }
+
+/// Identifier of the built-in deterministic provider.
+///
+/// The Phase 3 `MockChatCompletionService` is already the deterministic
+/// behaviour — a fixed completion that ignores the request — and it already
+/// lived in this module. Implementing [`LlmProvider`] for it is therefore the
+/// only way to give `AppState::new` a default provider without the application
+/// layer importing `infrastructure` (layout rule 4), and without editing the
+/// existing tests that assert this exact response body.
+///
+/// The production adapter in `src/infrastructure/providers/deterministic.rs`
+/// serves the same content under the same id, so swapping one for the other
+/// cannot change a single byte a client observes.
+pub const DETERMINISTIC_PROVIDER_ID: &str = "deterministic";
 
 #[cfg(test)]
 mod tests {
@@ -1071,5 +1188,104 @@ mod tests {
 
             assert_eq!(completion.content, "This is a mocked chat completion.");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Provider boundary
+    // -----------------------------------------------------------------------
+
+    /// A provider that never answers, so only the gateway's own bound can end
+    /// the call.
+    struct HangingProvider;
+
+    #[async_trait::async_trait]
+    impl LlmProvider for HangingProvider {
+        async fn chat(&self, _request: &ChatRequest) -> Result<ChatResponse, ProviderFailure> {
+            std::future::pending().await
+        }
+
+        fn id(&self) -> &str {
+            "hanging"
+        }
+    }
+
+    /// A provider that reports a category, to prove the boundary passes it
+    /// through unchanged.
+    struct FailingProvider(ProviderFailure);
+
+    #[async_trait::async_trait]
+    impl LlmProvider for FailingProvider {
+        async fn chat(&self, _request: &ChatRequest) -> Result<ChatResponse, ProviderFailure> {
+            Err(self.0)
+        }
+
+        fn id(&self) -> &str {
+            "failing"
+        }
+    }
+
+    fn valid_request() -> ChatRequest {
+        ChatRequest::new(
+            "mock-model",
+            vec![Message::new(MessageRole::User, "Hello!")],
+        )
+    }
+
+    #[tokio::test]
+    async fn bounded_call_turns_a_never_resolving_provider_into_deadline_exceeded() {
+        // Without the bound this test would hang rather than fail, which is
+        // exactly the regression it guards.
+        let started = std::time::Instant::now();
+
+        let result = call_provider_bounded(&HangingProvider, &valid_request(), 50).await;
+
+        assert_eq!(result.unwrap_err(), ProviderFailure::DeadlineExceeded);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "the bound must fire well before the test timeout"
+        );
+    }
+
+    #[tokio::test]
+    async fn bounded_call_returns_the_provider_response_when_it_arrives_in_time() {
+        let provider = MockChatCompletionService::new();
+
+        let response = call_provider_bounded(&provider, &valid_request(), 5_000)
+            .await
+            .unwrap();
+
+        assert_eq!(response.content, MOCK_COMPLETION_CONTENT);
+        assert!(response.usage.is_none());
+    }
+
+    #[tokio::test]
+    async fn bounded_call_does_not_rewrite_a_provider_failure() {
+        for failure in [
+            ProviderFailure::Unreachable,
+            ProviderFailure::Refused,
+            ProviderFailure::UnusableResponse,
+            ProviderFailure::InvalidResponse,
+        ] {
+            let result = call_provider_bounded(&FailingProvider(failure), &valid_request(), 5_000)
+                .await;
+
+            assert_eq!(result.unwrap_err(), failure);
+        }
+    }
+
+    #[tokio::test]
+    async fn default_provider_reports_the_documented_id() {
+        assert_eq!(MockChatCompletionService::new().id(), "deterministic");
+        assert_eq!(MockChatCompletionService::new().id(), DETERMINISTIC_PROVIDER_ID);
+    }
+
+    #[test]
+    fn provider_failure_carries_no_data() {
+        // A fieldless enum cannot hold a message, URL, or model name, so no
+        // adapter can leak provider detail through it (FR-010).
+        assert_eq!(
+            std::mem::size_of::<ProviderFailure>(),
+            std::mem::size_of::<u8>()
+        );
     }
 }

@@ -7,6 +7,7 @@ repository = "https://github.com/mezni/ai-gateway"
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1"
 axum = "0.8"
 http-body-util = "0.1"
 serde = { version = "1", features = ["derive"] }

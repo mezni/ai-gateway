@@ -17,6 +17,7 @@ pub async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<Readi
             StatusCode::OK,
             Json(ReadinessResponseDto {
                 status: "ready".to_owned(),
+                provider: state.provider_id().to_owned(),
             }),
         )
     } else {
@@ -24,6 +25,7 @@ pub async fn readiness(State(state): State<AppState>) -> (StatusCode, Json<Readi
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ReadinessResponseDto {
                 status: "not_ready".to_owned(),
+                provider: state.provider_id().to_owned(),
             }),
         )
     }

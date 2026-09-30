@@ -22,6 +22,10 @@ pub enum ApiError {
     PayloadTooLarge,
     #[error("The gateway could not complete the request.")]
     InternalError,
+    #[error("The upstream provider is unavailable.")]
+    ProviderUnavailable,
+    #[error("The upstream provider did not respond in time.")]
+    ProviderTimeout,
 }
 
 impl ApiError {
@@ -55,6 +59,28 @@ impl ApiError {
         }
     }
 
+    /// Maps a provider failure category to the client-facing error row.
+    ///
+    /// The mapping is exhaustive over the five categories and is the *only*
+    /// place a provider outcome becomes a response. `ProviderFailure` is
+    /// fieldless, so there is no provider detail here to redact: the category
+    /// alone selects the row, and the row's message is a fixed string.
+    ///
+    /// No category maps to a validation row. A client that sent a bad request
+    /// must keep seeing `invalid_request`; a provider that failed later is a
+    /// gateway-side problem (FR-012, FR-013).
+    pub fn from_provider_failure(failure: crate::application::chat::ProviderFailure) -> Self {
+        use crate::application::chat::ProviderFailure;
+
+        match failure {
+            ProviderFailure::Unreachable | ProviderFailure::Refused => Self::ProviderUnavailable,
+            ProviderFailure::DeadlineExceeded => Self::ProviderTimeout,
+            ProviderFailure::UnusableResponse | ProviderFailure::InvalidResponse => {
+                Self::InternalError
+            }
+        }
+    }
+
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::InvalidRequest | Self::UnsupportedFeature => StatusCode::BAD_REQUEST,
@@ -64,6 +90,8 @@ impl ApiError {
             Self::NotReady => StatusCode::SERVICE_UNAVAILABLE,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ProviderUnavailable => StatusCode::BAD_GATEWAY,
+            Self::ProviderTimeout => StatusCode::GATEWAY_TIMEOUT,
         }
     }
 
@@ -77,6 +105,8 @@ impl ApiError {
             Self::NotReady => "not_ready",
             Self::PayloadTooLarge => "payload_too_large",
             Self::InternalError => "internal_error",
+            Self::ProviderUnavailable => "provider_unavailable",
+            Self::ProviderTimeout => "provider_timeout",
         }
     }
 
@@ -90,6 +120,8 @@ impl ApiError {
             Self::NotReady => "The gateway is not accepting new chat requests.",
             Self::PayloadTooLarge => "The request payload is too large.",
             Self::InternalError => "The gateway could not complete the request.",
+            Self::ProviderUnavailable => "The upstream provider is unavailable.",
+            Self::ProviderTimeout => "The upstream provider did not respond in time.",
         }
     }
 
@@ -584,5 +616,261 @@ mod tests {
             assert_eq!(error.code(), expected_code);
             assert_eq!(error.into_response().status(), expected_status);
         }
+    }
+
+    /// Every documented row, pinned together. Adding a row means adding a case
+    /// here, and changing a frozen row means changing the table below.
+    const ALL_ROWS: [(&str, StatusCode, &str, &str); 10] = [
+        (
+            "InvalidRequest",
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "The chat request is invalid.",
+        ),
+        (
+            "UnsupportedFeature",
+            StatusCode::BAD_REQUEST,
+            "unsupported_feature",
+            "Streaming is not supported.",
+        ),
+        (
+            "UnsupportedMediaType",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_media_type",
+            "The request media type is not supported.",
+        ),
+        (
+            "MethodNotAllowed",
+            StatusCode::METHOD_NOT_ALLOWED,
+            "method_not_allowed",
+            "The request method is not allowed for this path.",
+        ),
+        (
+            "NotFound",
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "The requested path was not found.",
+        ),
+        (
+            "NotReady",
+            StatusCode::SERVICE_UNAVAILABLE,
+            "not_ready",
+            "The gateway is not accepting new chat requests.",
+        ),
+        (
+            "PayloadTooLarge",
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "payload_too_large",
+            "The request payload is too large.",
+        ),
+        (
+            "InternalError",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "The gateway could not complete the request.",
+        ),
+        (
+            "ProviderUnavailable",
+            StatusCode::BAD_GATEWAY,
+            "provider_unavailable",
+            "The upstream provider is unavailable.",
+        ),
+        (
+            "ProviderTimeout",
+            StatusCode::GATEWAY_TIMEOUT,
+            "provider_timeout",
+            "The upstream provider did not respond in time.",
+        ),
+    ];
+
+    /// The eight rows Phase 3 shipped, which this feature may not alter.
+    const PHASE_3_FROZEN_ROWS: [(&str, StatusCode, &str, &str); 8] = [
+        (
+            "InvalidRequest",
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "The chat request is invalid.",
+        ),
+        (
+            "UnsupportedFeature",
+            StatusCode::BAD_REQUEST,
+            "unsupported_feature",
+            "Streaming is not supported.",
+        ),
+        (
+            "UnsupportedMediaType",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "unsupported_media_type",
+            "The request media type is not supported.",
+        ),
+        (
+            "MethodNotAllowed",
+            StatusCode::METHOD_NOT_ALLOWED,
+            "method_not_allowed",
+            "The request method is not allowed for this path.",
+        ),
+        (
+            "NotFound",
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "The requested path was not found.",
+        ),
+        (
+            "NotReady",
+            StatusCode::SERVICE_UNAVAILABLE,
+            "not_ready",
+            "The gateway is not accepting new chat requests.",
+        ),
+        (
+            "PayloadTooLarge",
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "payload_too_large",
+            "The request payload is too large.",
+        ),
+        (
+            "InternalError",
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "The gateway could not complete the request.",
+        ),
+    ];
+
+    /// Resolves a row name to the variant, so the tables above stay readable.
+    fn variant(name: &str) -> ApiError {
+        match name {
+            "InvalidRequest" => ApiError::InvalidRequest,
+            "UnsupportedFeature" => ApiError::UnsupportedFeature,
+            "UnsupportedMediaType" => ApiError::UnsupportedMediaType,
+            "MethodNotAllowed" => ApiError::MethodNotAllowed,
+            "NotFound" => ApiError::NotFound,
+            "NotReady" => ApiError::NotReady,
+            "PayloadTooLarge" => ApiError::PayloadTooLarge,
+            "InternalError" => ApiError::InternalError,
+            "ProviderUnavailable" => ApiError::ProviderUnavailable,
+            "ProviderTimeout" => ApiError::ProviderTimeout,
+            other => panic!("no ApiError variant named {other}"),
+        }
+    }
+
+    #[test]
+    fn every_documented_row_matches_status_code_and_code() {
+        for (name, status, code, _) in ALL_ROWS {
+            let error = variant(name);
+
+            assert_eq!(error.status_code(), status, "status for {name}");
+            assert_eq!(error.code(), code, "code for {name}");
+        }
+    }
+
+    #[test]
+    fn all_ten_codes_are_distinct() {
+        let mut codes: Vec<&str> = ALL_ROWS.iter().map(|(_, _, code, _)| *code).collect();
+        codes.sort_unstable();
+
+        let total = codes.len();
+        codes.dedup();
+        assert_eq!(codes.len(), total, "error codes must be unique");
+    }
+
+    #[test]
+    fn all_ten_statuses_are_distinct_except_the_two_bad_request_rows() {
+        // `invalid_request` and `unsupported_feature` deliberately share 400;
+        // every other status must be unique so a client can branch on it.
+        let mut statuses: Vec<u16> = ALL_ROWS
+            .iter()
+            .map(|(_, status, _, _)| status.as_u16())
+            .collect();
+        let total = statuses.len();
+        statuses.sort_unstable();
+        statuses.dedup();
+
+        assert_eq!(total - statuses.len(), 1, "exactly one shared status expected");
+    }
+
+    #[test]
+    fn phase_3_rows_are_byte_identical_to_their_shipped_values() {
+        for (name, status, code, message) in PHASE_3_FROZEN_ROWS {
+            let error = variant(name);
+
+            assert_eq!(error.status_code(), status, "status for {name}");
+            assert_eq!(error.code(), code, "code for {name}");
+            assert_eq!(error.message(), message, "message for {name}");
+            // `Display` is what `thiserror` renders; it must not drift from
+            // `message()` or the two paths would disagree.
+            assert_eq!(error.to_string(), message, "Display for {name}");
+        }
+    }
+
+    #[test]
+    fn provider_rows_use_fixed_messages_with_no_interpolation() {
+        for (name, _, _, message) in ALL_ROWS.iter().filter(|(name, _, _, _)| {
+            name.starts_with("Provider")
+        }) {
+            let error = variant(name);
+
+            assert_eq!(error.message(), *message);
+            assert_eq!(error.to_string(), *message);
+        }
+    }
+
+    #[test]
+    fn every_failure_category_maps_to_its_documented_row() {
+        use crate::application::chat::ProviderFailure;
+
+        let cases = [
+            (ProviderFailure::Unreachable, 502, "provider_unavailable"),
+            (ProviderFailure::Refused, 502, "provider_unavailable"),
+            (ProviderFailure::DeadlineExceeded, 504, "provider_timeout"),
+            (ProviderFailure::UnusableResponse, 500, "internal_error"),
+            (ProviderFailure::InvalidResponse, 500, "internal_error"),
+        ];
+
+        for (failure, status, code) in cases {
+            let error = ApiError::from_provider_failure(failure);
+
+            assert_eq!(error.status_code().as_u16(), status, "status for {failure:?}");
+            assert_eq!(error.code(), code, "code for {failure:?}");
+        }
+    }
+
+    #[test]
+    fn no_failure_category_maps_to_a_validation_row() {
+        use crate::application::chat::ProviderFailure;
+
+        let all = [
+            ProviderFailure::Unreachable,
+            ProviderFailure::Refused,
+            ProviderFailure::DeadlineExceeded,
+            ProviderFailure::UnusableResponse,
+            ProviderFailure::InvalidResponse,
+        ];
+
+        for failure in all {
+            let error = ApiError::from_provider_failure(failure);
+
+            assert_ne!(error.code(), "invalid_request", "{failure:?} leaked a validation code");
+            assert_ne!(error.code(), "unsupported_feature", "{failure:?} leaked a feature code");
+        }
+    }
+
+    #[test]
+    fn provider_failure_mapping_is_total_over_every_category() {
+        // Compile-time exhaustiveness: adding a sixth category without mapping it
+        // fails to build here rather than silently falling back at runtime.
+        use crate::application::chat::ProviderFailure;
+
+        fn assert_mapped(failure: ProviderFailure) -> ApiError {
+            ApiError::from_provider_failure(failure)
+        }
+
+        let mapped = [
+            assert_mapped(ProviderFailure::Unreachable),
+            assert_mapped(ProviderFailure::Refused),
+            assert_mapped(ProviderFailure::DeadlineExceeded),
+            assert_mapped(ProviderFailure::UnusableResponse),
+            assert_mapped(ProviderFailure::InvalidResponse),
+        ];
+
+        assert_eq!(mapped.len(), 5);
     }
 }

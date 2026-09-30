@@ -250,7 +250,7 @@ async fn bound_server_handles_one_hundred_health_and_readiness_requests() {
     for _ in 0..100 {
         let started = Instant::now();
         let response = get_path(address, "/ready").await;
-        assert_json_response(&response, "HTTP/1.1 200 OK\r\n", br#"{"status":"ready"}"#);
+        assert_json_response(&response, "HTTP/1.1 200 OK\r\n", br#"{"status":"ready","provider":"deterministic"}"#);
         if started.elapsed() < REQUEST_BUDGET {
             readiness_within_budget += 1;
         }
@@ -337,7 +337,7 @@ async fn shutdown_drains_an_admitted_partial_chat_request() {
     assert_json_response(
         &get_path(address, "/ready").await,
         "HTTP/1.1 503 Service Unavailable\r\n",
-        br#"{"status":"not_ready"}"#,
+        br#"{"status":"not_ready","provider":"deterministic"}"#,
     );
     assert_json_response(
         &post_chat(address, r#"{"model":"mock-model","messages":[]}"#).await,

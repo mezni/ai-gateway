@@ -6,6 +6,9 @@
 
 This contract states the `POST /v1/chat/completions` wire behavior implemented in
 this phase. It supersedes the Phase 2 chat-endpoint sections of
+`specs/003-http-gateway-core/contracts/http-api.md` and is itself superseded by
+`specs/005-provider-abstraction/contracts/http-api.md` for error conditions;
+ 切り替えてから Phase 2 chat-endpoint sections of
 `specs/003-http-gateway-core/contracts/http-api.md`; every part of that contract
 this phase does not change — liveness, readiness, routing, method handling,
 shutdown behavior, and the seven unchanged error rows — continues to apply

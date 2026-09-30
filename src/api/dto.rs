@@ -12,6 +12,9 @@ pub struct HealthResponseDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReadinessResponseDto {
     pub status: String,
+    /// Id of the provider currently serving completions, so an operator can
+    /// confirm which selection is live without a separate endpoint (FR-008).
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,22 +193,30 @@ mod tests {
     fn readiness_response_serializes_ready_status() {
         let response = ReadinessResponseDto {
             status: "ready".to_owned(),
+            provider: "deterministic".to_owned(),
         };
 
         let value = serde_json::to_value(response).unwrap();
 
-        assert_eq!(value, json!({"status": "ready"}));
+        assert_eq!(
+            value,
+            json!({"status": "ready", "provider": "deterministic"})
+        );
     }
 
     #[test]
     fn readiness_response_serializes_not_ready_status() {
         let response = ReadinessResponseDto {
             status: "not_ready".to_owned(),
+            provider: "deterministic".to_owned(),
         };
 
         let value = serde_json::to_value(response).unwrap();
 
-        assert_eq!(value, json!({"status": "not_ready"}));
+        assert_eq!(
+            value,
+            json!({"status": "not_ready", "provider": "deterministic"})
+        );
     }
 
     #[test]

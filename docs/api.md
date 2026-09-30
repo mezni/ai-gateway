@@ -18,6 +18,8 @@
 >   [21. Validation Errors](#21-validation-errors) — the flat two-field
 >   `{"code", "message"}` object, the 1 MiB body bound, and the validation
 >   precedence order
+> - [22. Provider Errors](#22-provider-errors) — the two new provider
+>   failure codes
 >
 > **Not implemented yet**
 > - [4. Authentication](#4-authentication), [6. Request IDs](#6-request-ids)
@@ -25,8 +27,9 @@
 > - [16. Streaming API](#16-streaming-api) — `stream: true` returns
 >   `400 unsupported_feature`
 > - [17. Models API](#17-models-api) — the gateway serves exactly three routes
+> - [28. Timeout Errors](#28-timeout-errors)
 > - The wrapped error shape in [19. Error Object](#19-error-object), and
->   sections [22](#22-authentication-errors)-[28](#28-timeout-errors)
+>   sections [23](#23-authentication-errors)-[27](#27-timeout-errors)
 > - [29. Retry and Fallback](#29-retry-and-fallback),
 >   [30. Model Routing](#30-model-routing),
 >   [31. Multi-Tenancy](#31-multi-tenancy),
@@ -747,6 +750,8 @@ Identifier used to correlate the error with gateway logs and traces.
 | 415    | Unsupported request media type                 |
 | 500    | Internal gateway error                         |
 | 503    | Gateway not accepting new chat requests        |
+| 502    | Provider unavailable                           |
+| 504    | Provider timeout                               |
 
 Planned for later phases:
 
@@ -758,13 +763,11 @@ Planned for later phases:
 | 408    | Request timeout                                |
 | 409    | Resource conflict                              |
 | 429    | Rate limit or quota exceeded                   |
-| 502    | Provider returned an invalid/unusable response |
-| 504    | Provider/request timeout                       |
 
 The exact mapping should be implemented centrally rather than independently inside every handler.
 
 For `POST /v1/chat/completions`, the implemented statuses are `200`, `400`,
-`404`, `405`, `413`, `415`, and `503`. See Section 21.
+`404`, `405`, `413`, `415`, `502`, and `503`. See Section 21.
 
 ## 21. Validation Errors
 

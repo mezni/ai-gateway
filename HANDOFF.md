@@ -5,7 +5,7 @@ This document is used to hand off work between development sessions. Update it a
 ## Current State
 
 - **Date**: 2026-09-30
-- **Phase**: Phase 0 - Project Foundation (Complete) / Phase 1 - Architecture Specification (Complete) / Phase 2 - HTTP Gateway Core (Complete) / Phase 3 - Domain Models and Validation (Complete)
+- **Phase**: Phase 0 - Project Foundation (Complete) / Phase 1 - Architecture Specification (Complete) / Phase 2 - HTTP Gateway Core (Complete) / Phase 3 - Domain Models and Validation (Complete) / Phase 4 - Provider Abstraction (Complete)
 - **Branch**: main
 - **Constitution Version**: 1.1.0
 
@@ -19,6 +19,7 @@ This document is used to hand off work between development sessions. Update it a
 - [x] Phase 1 layered architecture (`specs/002-layered-architecture`, 16/16 tasks): lib-first module skeleton (`domain`/`application`/`api`/`infrastructure`/`config`, file-stem layout), provider-independent domain types (`ChatRequest`, `Message`, `MessageRole`, `ChatResponse`, `Usage`, `Model`, `Provider`), `AppState` composition root; all quality gates green
 - [x] Phase 2 HTTP gateway core (`specs/003-http-gateway-core`, 48/48 tasks, requirements checklist 16/16): Axum 0.8 server exposing `GET /health`, `GET /ready`, and `POST /v1/chat/completions`; stateless deterministic local mock chat completion; flat `{"code","message"}` error contract across seven rows; lifecycle-driven readiness (Initializing → Ready → ShuttingDown → Stopped) and graceful shutdown under a single absolute 10-second deadline; all quality gates green (120 tests)
 - [x] Phase 3 domain models and validation (`specs/004-domain-validation`, 51/51 tasks, requirements checklist 16/16): ordered nine-stage validation pipeline (`required-field` -> `control-range` -> `streaming`) in `src/application/chat.rs`; `temperature` (`0.0`-`2.0` inclusive) and `max_tokens` (`1`-`4096` inclusive) as optional domain fields; manual `MapAccess` deserializer refusing non-numbers, non-integers, explicit `null`, and duplicate controls while still ignoring unknown fields; 1 MiB inclusive whole-body limit (`1_048_576`) enforced after admission and before media-type handling with the new `413 payload_too_large` row; `stream: true` refused as the pipeline's final stage; all 20 catalogued rules, all nine precedence stages, the size boundary, 50-request concurrency isolation, and lifecycle behavior covered automatically; all quality gates green (203 tests)
+- [x] Phase 4 provider abstraction (`specs/005-provider-abstraction`): `LlmProvider` trait with `ProviderFailure` enum (5 categories), `ProviderConfig` with env vars `AI_GATEWAY_PROVIDER` and `AI_GATEWAY_PROVIDER_TIMEOUT_MS` (deterministic default), `ProviderRegistry` auto-registering deterministic provider, `502 provider_unavailable` and `504 provider_timeout` error codes extending client-facing contract from 8 to 10, `provider` field in `ReadinessResponseDto` (FR-008), bounded provider calls with deadline enforcement (FR-011), provider selection wired in `main.rs` via `AppState::new_with_provider()`, test count grown to 245 across all test suites
 
 ## In Progress
 
@@ -26,8 +27,9 @@ None at this time.
 
 ## Next Steps
 
-1. Start Phase 4 using Spec Kit (`/speckit.specify`) targeting `docs/plan.md` section 9 (Plan Phase 4 - Provider Abstraction)
-2. Introduce the provider abstraction behind the existing `MockChatCompletionService` boundary, keeping the domain layer provider-independent
+1. Start Phase 5 using Spec Kit (`/speckit.specify`) targeting `docs/plan.md` section 10 (Phase 5 - Reliability and Production Readiness)
+2. Provider abstraction is complete; US1 and US2 validated; US3 extensibility ready
+3. Phase 5: introduce Redis, reliability patterns, production deployment
 3. Phase 3 deliberately left the 1 MiB limit, the control ranges, and the 14-row error contract fixed; do not make the limit configurable, add a `details` field, or add per-field content limits here
 4. Before implementing any phase that needs authentication, request correlation, or provider errors (sections 22-28), decide whether the wrapped `{"error":{"type",...,"request_id"}}` shape in `docs/api.md` section 19 is adopted or dropped. Adopting it is a breaking change to the Phase 2 flat `{"code","message"}` contract and needs its own spec; the 14-row client-facing contract in `specs/004-domain-validation/contracts/http-api.md` covers 15 conditions across 8 codes and must stay byte-exact for the 14 currently reachable ones
 
