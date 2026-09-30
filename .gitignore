@@ -16,3 +16,6 @@ Thumbs.db
 *.local
 .vscode/
 .idea/
+
+# graphify knowledge graph output
+/graphify-out/
