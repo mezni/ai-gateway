@@ -84,7 +84,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SIGTERM behavior were also verified by hand against a locally running
   binary
 
-### Changed
 - Phase 3 domain models and validation (`specs/004-domain-validation`, 51/51
   tasks, requirements checklist 16/16)
   - Added an ordered nine-stage validation pipeline in
@@ -122,6 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `server_lifecycle`), adding full coverage of the 20-rule catalog, the nine
     precedence stages, the size boundary from both sides, 50-request
     concurrency isolation, and lifecycle behavior around oversized refusals.
+
+### Changed
 - `AppState` composition root now carries the lifecycle state and the
   stateless `MockChatCompletionService`
 - `main.rs` now binds the configured address, serves the gateway, and drives

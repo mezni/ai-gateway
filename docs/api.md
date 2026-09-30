@@ -1,5 +1,40 @@
 # AI Gateway — API
 
+> ## Document status
+>
+> This document is the **target** API. It was written before implementation
+> and deliberately describes more than the gateway currently does, so treat
+> each section by its state as of Phase 3 (`specs/004-domain-validation`):
+>
+> **Implemented and verified**
+> - [5. Content Type](#5-content-type) — JSON only; anything else is `415`
+> - [7. Health API](#7-health-api), [8. Readiness API](#8-readiness-api)
+> - [9. Chat Completions API](#9-chat-completions-api) over `POST /v1/chat/completions`
+> - [10. Chat Request](#10-chat-request) and
+>   [11. Request Fields](#11-request-fields) — `model`, `messages`,
+>   `temperature`, `max_tokens`, `stream`
+> - [13. Chat Response](#13-chat-response) — a fixed mock, not a real completion
+> - [18. Error Handling](#18-error-handling) and
+>   [21. Validation Errors](#21-validation-errors) — the flat two-field
+>   `{"code", "message"}` object, the 1 MiB body bound, and the validation
+>   precedence order
+>
+> **Not implemented yet**
+> - [4. Authentication](#4-authentication), [6. Request IDs](#6-request-ids)
+> - [15. Usage](#15-usage) accounting (the mock response reports fixed counts)
+> - [16. Streaming API](#16-streaming-api) — `stream: true` returns
+>   `400 unsupported_feature`
+> - [17. Models API](#17-models-api) — the gateway serves exactly three routes
+> - The wrapped error shape in [19. Error Object](#19-error-object), and
+>   sections [22](#22-authentication-errors)-[28](#28-timeout-errors)
+> - [29. Retry and Fallback](#29-retry-and-fallback),
+>   [30. Model Routing](#30-model-routing),
+>   [31. Multi-Tenancy](#31-multi-tenancy),
+>   [32. Administrative API](#32-administrative-api)
+>
+> Sections [34](#34-rust-domain-representation)-[38](#38-api-evolution) are
+> architecture and evolution guidance, not current API surface.
+
 ## 1. Overview
 
 The AI Gateway exposes a unified HTTP API for applications that need to interact with multiple Large Language Model (LLM) providers.
@@ -524,7 +559,12 @@ If a provider does not return usage information, the gateway should represent th
 
 ## 16. Streaming API
 
-The same endpoint supports streaming.
+> **Not implemented.** `stream: true` is currently refused with
+> `400 unsupported_feature` / `Streaming is not supported.` (see
+> [11.5 stream](#115-stream)). Everything below describes the *intended* shape
+> for a later phase and is not observable today.
+
+The same endpoint is intended to support streaming.
 
 ```http
 POST /v1/chat/completions
@@ -611,24 +651,36 @@ Clients should only depend on gateway model IDs.
 
 ## 18. Error Handling
 
-All API errors use a consistent structure.
+All API errors use a consistent structure: a top-level object with exactly
+`code` and `message`, and nothing else. There is no wrapper, no `details`
+object, and no per-field list.
 
 Example:
 
 ```json
 {
-  "error": {
-    "type": "authentication_error",
-    "code": "invalid_api_key",
-    "message": "The provided API key is invalid.",
-    "request_id": "req_123"
-  }
+  "code": "invalid_request",
+  "message": "The chat request is invalid."
 }
 ```
 
+A planned later phase adds a `type` discriminator and a `request_id`
+correlation field; see [19. Error Object](#19-error-object). That richer shape
+is not emitted today.
+
 ## 19. Error Object
 
-The error object contains:
+> **Partly aspirational.** The gateway currently emits only the flat,
+> two-field error object documented in
+> [21. Validation Errors](#21-validation-errors):
+> `{"code": ..., "message": ...}`. The wrapped shape below — a `type`
+> discriminator, a `code`, a `message`, and a `request_id` — is **not
+> implemented** and is reserved for the authentication, authorization,
+> rate-limit, quota, provider, and timeout phases (sections 22-28). Do not
+> build a client against it yet; it is expected to be reconciled with the
+> implemented shape before those phases ship.
+
+The planned error object contains:
 
 ```json
 {
@@ -688,20 +740,25 @@ Identifier used to correlate the error with gateway logs and traces.
 | Status | Meaning                                        |
 | ------ | ---------------------------------------------- |
 | 200    | Successful request                             |
-| 201    | Resource created, where applicable             |
 | 400    | Invalid request                                |
-| 401    | Authentication failed                          |
-| 403    | Authorization failed                           |
 | 404    | Resource/model not found                       |
 | 405    | Method not allowed for that path               |
-| 408    | Request timeout                                |
-| 409    | Resource conflict                              |
-| 429    | Rate limit or quota exceeded                   |
 | 413    | Request body larger than 1 MB                  |
 | 415    | Unsupported request media type                 |
 | 500    | Internal gateway error                         |
+| 503    | Gateway not accepting new chat requests        |
+
+Planned for later phases:
+
+| Status | Meaning                                        |
+| ------ | ---------------------------------------------- |
+| 201    | Resource created, where applicable             |
+| 401    | Authentication failed                          |
+| 403    | Authorization failed                           |
+| 408    | Request timeout                                |
+| 409    | Resource conflict                              |
+| 429    | Rate limit or quota exceeded                   |
 | 502    | Provider returned an invalid/unusable response |
-| 503    | Gateway/provider unavailable                   |
 | 504    | Provider/request timeout                       |
 
 The exact mapping should be implemented centrally rather than independently inside every handler.
@@ -801,6 +858,11 @@ The authoritative rule catalog, including the 20 rule identifiers, is
 `specs/004-domain-validation/contracts/validation-rules.md`.
 
 ## 22. Authentication Errors
+
+> **Not implemented** (Phase 5+). This section and sections 23-28 describe the
+> planned error shape, which includes a `type` discriminator and a `request_id`
+> that the gateway does not yet emit. Today the only error body is the flat
+> `{"code", "message"}` object from section 21.
 
 Missing API key:
 
@@ -1314,8 +1376,9 @@ contract is specified in Section 21 and in
 `specs/004-domain-validation/contracts/http-api.md`, both of which supersede any
 earlier description of this endpoint. In summary: the body is limited to 1 MiB
 inclusive, `temperature` is `0.0`-`2.0` inclusive, `max_tokens` is `1`-`4096`
-inclusive, `stream: true` is refused, and every failure is one of the seven
-`{code, message}` rows in Section 21.
+inclusive, `stream: true` is refused, and every failure is one of the eight
+`{code, message}` codes in Section 21 (covering 15 conditions; `internal_error`
+is not reachable from a client request).
 
 The initial request:
 
